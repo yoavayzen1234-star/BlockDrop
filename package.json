@@ -1,0 +1,40 @@
+{
+  "name": "surfer-plan",
+  "version": "1.0.0",
+  "description": "Professional Desktop Floor Planner",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "author": "David Shmerling",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "three": "^0.128.0"
+  },
+  "build": {
+    "appId": "com.surferplan.desktop",
+    "productName": "SurferPlan Desktop",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "portable",
+      "icon": "assets/icon.ico"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "plan3d.engine.js",
+      "renderer.js",
+      "assets/**/*"
+    ]
+  }
+}

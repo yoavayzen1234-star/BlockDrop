@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <title>SurferPlan Desktop</title>
+    <style>
+        :root {
+            --primary: #0077be;
+            --bg: #f0f4f8;
+            --wall: #333;
+            --handle: #0077be;
+            --selected: #2ecc71;
+            --guide: #475569;
+            --save: #27ae60;
+            --load: #f39c12;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #sidebar {
+            width: 360px;
+            background: #fff;
+            border-left: 2px solid #ddd;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            overflow-y: auto;
+            transition: 0.3s ease;
+            position: relative;
+        }
+
+        #sidebar.collapsed {
+            width: 0;
+            padding: 0;
+            transform: translateX(100%);
+        }
+
+        #toggle-sidebar {
+            position: fixed;
+            top: 20px;
+            right: 360px;
+            z-index: 1001;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px;
+            border-radius: 8px 0 0 8px;
+            cursor: pointer;
+            transition: 0.3s ease;
+            font-size: 18px;
+        }
+
+        #sidebar.collapsed+#toggle-sidebar {
+            right: 0;
+        }
+
+        .input-group {
+            margin-bottom: 12px;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 15px;
+        }
+
+        label {
+            font-weight: bold;
+            font-size: 13px;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+
+        #tabs-bar {
+            display: flex;
+            background: #e2e8f0;
+            padding: 10px 20px 0 20px;
+            gap: 5px;
+            border-bottom: 2px solid #cbd5e1;
+        }
+
+        .tab {
+            padding: 8px 15px;
+            background: #cbd5e1;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-weight: bold;
+            color: #64748b;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tab.active {
+            background: white;
+            color: var(--primary);
+            border-bottom: 3px solid var(--primary);
+        }
+
+        .tab .del-floor {
+            color: #ff4444;
+            font-size: 16px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            padding: 0 4px;
+            border-radius: 3px;
+        }
+
+        .add-tab {
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            font-weight: bold;
+            align-self: center;
+            margin-bottom: 5px;
+        }
+
+        #workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        #main {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background: #e2e8f0;
+        }
+
+        #canvas-wrapper {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform-origin: 0 0;
+            will-change: transform;
+        }
+
+        .floor-plan {
+            position: absolute;
+            width: 50000px;
+            height: 50000px;
+            top: -25000px;
+            left: -25000px;
+            background: white;
+            border: 3px solid var(--wall);
+            background-image: radial-gradient(#d1d1d1 1px, transparent 1px);
+            background-size: 24px 24px;
+            cursor: crosshair;
+            display: none;
+        }
+
+        .floor-plan.active {
+            display: block;
+        }
+
+        #camera-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 1002;
+        }
+
+        .cam-btn {
+            background: white;
+            border: 1px solid #ccc;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .cam-btn:hover {
+            background: #f8fafc;
+        }
+
+        .floor-title {
+            position: fixed;
+            top: 60px;
+            right: 400px;
+            font-weight: bold;
+            color: var(--wall);
+            font-size: 20px;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .room {
+            position: absolute;
+            border: 1.5px solid #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: move;
+            box-sizing: border-box;
+            background: rgba(255, 255, 255, 0.95);
+            user-select: none;
+            z-index: 5;
+            transform-origin: center center;
+        }
+
+        .room.selected {
+            border: 2.5px solid var(--selected);
+            box-shadow: 0 0 10px rgba(46, 204, 113, 0.4);
+            z-index: 10;
+        }
+
+        .dim {
+            position: absolute;
+            font-size: 10px;
+            color: #555;
+            font-weight: bold;
+            background: white;
+            padding: 0 2px;
+            pointer-events: none;
+        }
+
+        .dim-w {
+            top: -16px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .dim-l {
+            left: -32px;
+            top: 50%;
+            transform: translateY(-50%) rotate(-90deg);
+        }
+
+        .h-r,
+        .h-l,
+        .h-t,
+        .h-b {
+            position: absolute;
+            background: transparent;
+            z-index: 6;
+        }
+
+        .h-r {
+            right: -4px;
+            top: 0;
+            width: 8px;
+            height: 100%;
+            cursor: ew-resize;
+        }
+
+        .h-l {
+            left: -4px;
+            top: 0;
+            width: 8px;
+            height: 100%;
+            cursor: ew-resize;
+        }
+
+        .h-t {
+            top: -4px;
+            left: 0;
+            width: 100%;
+            height: 8px;
+            cursor: ns-resize;
+        }
+
+        .h-b {
+            bottom: -4px;
+            left: 0;
+            width: 100%;
+            height: 8px;
+            cursor: ns-resize;
+        }
+
+        .room-btns {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            display: flex;
+            gap: 2px;
+            z-index: 11;
+        }
+
+        .btn-sm {
+            border: none;
+            cursor: pointer;
+            border-radius: 3px;
+            width: 16px;
+            height: 16px;
+            color: white;
+            font-size: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .angle-pop {
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 45px;
+            height: 20px;
+            font-size: 11px;
+            font-weight: bold;
+            border: 1px solid var(--primary);
+            border-radius: 4px;
+            text-align: center;
+            background: white;
+            color: var(--primary);
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            display: none;
+            z-index: 100;
+        }
+
+        .room-ghost {
+            position: absolute;
+            border: 1px dashed #bbb;
+            background: rgba(220, 220, 220, 0.15) !important;
+            pointer-events: none;
+            z-index: 1;
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-start;
+            padding: 4px;
+            color: #aaa;
+            font-size: 9px;
+            overflow: hidden;
+            opacity: 0.6;
+        }
+
+        .v-guide,
+        .h-guide {
+            position: absolute;
+            pointer-events: none;
+            z-index: 80;
+            display: none;
+            opacity: 0.5;
+            transition: opacity 0.15s ease;
+        }
+
+        .v-guide {
+            width: 0;
+            height: 100%;
+            top: 0;
+            border-left: 1px dashed var(--guide);
+        }
+
+        .h-guide {
+            height: 0;
+            width: 100%;
+            left: 0;
+            border-top: 1px dashed var(--guide);
+        }
+
+        #standards-box {
+            background: #222;
+            color: #eee;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: auto;
+            border: 1px solid #444;
+        }
+
+        #std-input {
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 10px;
+            border-radius: 5px;
+            width: 100%;
+            margin-bottom: 8px;
+        }
+
+        #std-result {
+            font-size: 11px;
+            line-height: 1.5;
+            color: #2ecc71;
+            min-height: 50px;
+        }
+
+        button.view-3d {
+            background: var(--wall);
+            color: #fff;
+            border: none;
+            padding: 12px;
+            width: 100%;
+            cursor: pointer;
+            border-radius: 6px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        #three-container {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #fff;
+            z-index: 2000;
+        }
+
+        #close-3d {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 2001;
+            padding: 10px 20px;
+            background: #ff4444;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        .project-btns {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .btn-project {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            color: white;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+
+        .selection-box {
+            position: absolute;
+            border: 1px dashed var(--primary);
+            background: rgba(0, 119, 190, 0.1);
+            display: none;
+            z-index: 100;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="sidebar">
+        <h2 style="color: var(--primary); margin:0 0 5px 0; font-size: 18px;">SurferPlan Desktop</h2>
+        <div style="font-size: 13px; color: #64748b; margin-bottom: 15px; font-weight: bold;">👤 יואב</div>
+
+        <div class="project-btns">
+            <button class="btn-project" style="background: var(--save);" id="save-btn">💾 שמירה</button>
+            <button class="btn-project" style="background: var(--load);" id="load-btn">📂 טעינה</button>
+        </div>
+
+        <div class="input-group">
+            <label>גובה קומות (מ'):</label>
+            <div id="heights-inputs" style="display: flex; flex-direction: column; gap: 5px;"></div>
+        </div>
+
+        <div class="input-group">
+            <label>הוספת פונקציה:</label>
+            <input type="text" id="newName" placeholder="שם החדר">
+            <input type="number" id="newArea" placeholder="שטח (מ" ר)">
+            <select id="newFloorSelect"></select>
+            <button id="add-room-btn"
+                style="background:var(--primary); color:white; border:none; padding:8px; width:100%; border-radius:6px; cursor:pointer; font-weight:bold;">הוסף
+                +</button>
+        </div>
+
+        <button class="view-3d" id="view-3d-btn">תצוגת מודל גושי 3D מלא 🏗️</button>
+
+        <div id="room-inventory">
+            <label>ניהול שטחים:</label>
+            <div id="inventory-list"></div>
+        </div>
+
+        <div id="standards-box">
+            <label>💡 מנוע תקנים חכם:</label>
+            <input type="text" id="std-input" placeholder="חפש: ממד, נכים, מדרגות, דלת..."
+                onkeyup="runStandardsSearch()">
+            <div id="std-result">הקלד מילה לחיפוש תקן...</div>
+        </div>
+    </div>
+
+    <button id="toggle-sidebar">☰</button>
+
+    <div id="workspace">
+        <div id="tabs-bar">
+            <!-- Add floor button is added via renderer.js -->
+        </div>
+        <div id="main">
+            <div id="canvas-wrapper">
+                <!-- Floor plans will be here -->
+            </div>
+            <div id="camera-controls">
+                <button class="cam-btn" id="reset-cam">Reset View</button>
+                <div class="cam-btn" id="zoom-level">100%</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="three-container">
+        <button id="close-3d">חזור לעריכה X</button>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script type="module" src="renderer.js"></script>
+</body>
+
+</html>

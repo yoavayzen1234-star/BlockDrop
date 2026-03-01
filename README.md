@@ -1,30 +1,47 @@
-# 🏗️ BlockDrop
+# SurferPlan Desktop 🏗️
 
-Professional Floor Plan Editor for Israeli Building Standards (SI 1045).
+Professional Desktop Application for Floor Planning and 3D Modeling.
+Built with Electron, Three.js, and Node.js.
 
 ## Features
-- **Professional Editor**: 2D canvas with magnetic snapping and visual guides.
-- **Standards Validation**: Automatic area and dimension checks against Israeli building standards.
-- **Modular Architecture**: Built with PyQt6 and SQLite for robust local performance.
-- **Standalone Export**: Build into a double-clickable executable for any computer.
-- **Hebrew Support**: Full RTL support and Hebrew interface.
+- **2D Editor**: Professional vector-based room drawing.
+- **3D Engine**: Extruded 3D preview with stacking floor logic.
+- **Local Storage**: Save and load projects locally as `.spp` files.
+- **Multi-Floor Support**: Manage and stack multiple floors with custom heights.
+- **Offline Mode**: 100% functional without internet connection.
+- **Hardware Security**: Integrated machine fingerprinting for licensing.
 
-## Installation
-1. Install Python 3.
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Run the app:
-   ```bash
-   python main.py
-   ```
+## Getting Started
 
-## Building Executable
-Run the build script to generate a standalone file on your desktop:
+### Prerequisites
+- [Node.js](https://nodejs.org/) (Recommended version 18+)
+
+### Installation
 ```bash
-python build_to_desktop.py
+npm install
 ```
 
-## Security
-This version is open and features no hardware locking or device tracking.
+### Run Locally (Development)
+```bash
+npm start
+```
+
+### Build for Windows (.exe)
+```bash
+npm run build
+```
+
+## Security & Storage
+- **Local Files**: Projects are saved locally using the Electron dialog system.
+- **Privacy**: No external tracking or server calls.
+- **HWID**: Device fingerprinting enabled in the main process.
+
+## Project Structure
+- `main.js`: Main process handling windows and OS dialogs.
+- `preload.js`: Secure bridge between main and renderer.
+- `index.html`: UI structure and styles.
+- `renderer.js`: UI logic and state management.
+- `plan3d.engine.js`: 3D rendering engine.
+
+---
+©2026 SurferPlan
