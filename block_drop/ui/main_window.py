@@ -21,6 +21,7 @@ from block_drop.logic.engine import (
 )
 from block_drop.data.database import DatabaseManager
 from block_drop.ui.canvas import PlanCanvas, PlanScene
+from block_drop.logic.user import get_current_user
 
 DARK_STYLE = """
 QMainWindow { background-color: #0f0f23; color: #e0e0e0; }
@@ -62,7 +63,8 @@ class MainWindow(QMainWindow):
         sidebar = QWidget(); sidebar.setFixedWidth(320)
         side_layout = QVBoxLayout(sidebar)
         
-        logo = QLabel("🏗️ BlockDrop")
+        user = get_current_user()
+        logo = QLabel(f"🏗️ BlockDrop\n👤 {user.name}")
         logo.setStyleSheet("font-size: 18px; font-weight: bold; color: #4a90d9; padding: 10px;")
         side_layout.addWidget(logo)
 
