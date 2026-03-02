@@ -62,6 +62,10 @@ export class Plan3DEngine {
         this.renderOnce();
     }
 
+    /**
+     * Build 3D from 2D state. Logical coords (leftPx, topPx) use global origin 0,0 =
+     * infinite canvas center; 3D XZ origin is the same so the model is aligned with 2D.
+     */
     buildFromState(floors, rooms) {
         this.clearScene();
         let accumulatedHeight = 0;
@@ -121,15 +125,13 @@ export class Plan3DEngine {
                 const mesh = new THREE.Mesh(geometry, material);
 
                 if (r.outer) {
-                    // Polygons are built in world space typically, but let's check centering
                     mesh.position.set(0, accumulatedHeight + (h / 2), 0);
                 } else {
-                    mesh.position.set(
-                        ((r.leftPx || r.left) / this.SCALE) - 0, // Centering adjustments if needed
-                        accumulatedHeight + (h / 2),
-                        ((r.topPx || r.top) / this.SCALE) - 0
-                    );
-                    mesh.rotation.y = -((r.rotationDeg || r.rotation || 0) * (Math.PI / 180));
+                    // Map 2D global origin (0,0) to 3D (0, y, 0)
+                    const x = (r.leftPx ?? r.left ?? 0) / this.SCALE;
+                    const z = (r.topPx ?? r.top ?? 0) / this.SCALE;
+                    mesh.position.set(x, accumulatedHeight + (h / 2), z);
+                    mesh.rotation.y = -((r.rotationDeg ?? r.rotation ?? 0) * (Math.PI / 180));
                 }
 
                 mesh.castShadow = true;
@@ -146,6 +148,24 @@ export class Plan3DEngine {
             });
             accumulatedHeight += floor.height;
         });
+
+        // Center orbit target on model bounds (sync with 2D global origin)
+        if (this.controls && this.meshes.length > 0) {
+            this.scene.updateMatrixWorld(true);
+            const box = new THREE.Box3();
+            this.meshes.forEach(m => {
+                if (m.geometry) {
+                    m.geometry.computeBoundingBox();
+                    if (m.geometry.boundingBox) {
+                        const b = m.geometry.boundingBox.clone();
+                        b.applyMatrix4(m.matrixWorld);
+                        box.union(b);
+                    }
+                }
+            });
+            const center = box.getCenter(new THREE.Vector3());
+            this.controls.target.copy(center);
+        }
     }
 
     clearScene() {

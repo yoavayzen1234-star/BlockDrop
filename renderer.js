@@ -50,6 +50,10 @@ function initApp() {
     document.getElementById('toggle-sidebar').onclick = toggleSidebar;
     document.getElementById('std-input').onkeyup = runStandardsSearch;
     document.getElementById('reset-cam').onclick = () => camera.reset();
+    document.getElementById('reset-view').onclick = () => camera.centerView();
+
+    // Listen for room-merge events from editor2d.js
+    document.addEventListener('room-merge', (e) => onRoomMerge(e.detail.parentId, e.detail.childId));
 
     // Default start
     camera.reset();
@@ -297,21 +301,147 @@ function updateFloorSelect() {
     if (state.activeFloorId) select.value = state.activeFloorId;
 }
 
+/** Get room area in m² from dataset or from current dimensions (fallback). */
+function getRoomAreaM2(roomEl) {
+    let area = parseFloat(roomEl.dataset.area);
+    if (!Number.isFinite(area) || area <= 0) {
+        const wPx = parseFloat(roomEl.style.width);
+        const hPx = parseFloat(roomEl.style.height);
+        if (Number.isFinite(wPx) && Number.isFinite(hPx) && wPx > 0 && hPx > 0) {
+            area = (wPx / SCALE) * (hPx / SCALE);
+            roomEl.dataset.area = area.toFixed(1);
+        } else {
+            area = 0;
+        }
+    }
+    return area;
+}
+
 function syncInventory() {
     const list = document.getElementById('inventory-list');
     list.innerHTML = '';
+
+    // Top-level rooms
     document.querySelectorAll(`.room[data-floor="${state.activeFloorId}"]`).forEach(r => {
+        const areaM2 = getRoomAreaM2(r);
         const item = document.createElement('div');
         item.className = 'inventory-item';
-        item.style.display = "flex"; item.style.justifyContent = "space-between"; item.style.marginBottom = "5px";
-        item.innerHTML = `<span>${r.querySelector('.room-label').innerText}</span> <input type="number" style="width:50px" value="${parseFloat(r.dataset.area).toFixed(0)}">`;
+        item.style.display = "flex";
+        item.style.justifyContent = "space-between";
+        item.style.marginBottom = "5px";
+        item.style.fontWeight = "bold";
+        item.innerHTML = `<span>${r.querySelector('.room-label').innerText}</span> <input type="number" class="inventory-area-input" value="${areaM2.toFixed(1)}" min="0.1" step="0.1" title="שטח במ\"ר">`;
         list.appendChild(item);
+
         item.querySelector('input').onchange = (e) => {
             r.dataset.area = e.target.value;
             updateRoomSize(r.id, Math.sqrt(e.target.value), Math.sqrt(e.target.value));
             syncInventory();
         };
+
+        // Show nested rooms for this parent
+        if (state.nestedData[r.id]) {
+            state.nestedData[r.id].forEach(child => {
+                const subItem = document.createElement('div');
+                subItem.className = 'inventory-sub-item';
+                subItem.style.display = "flex";
+                subItem.style.justifyContent = "space-between";
+                subItem.style.paddingRight = "20px";
+                subItem.style.fontSize = "12px";
+                subItem.style.color = "#666";
+                subItem.innerHTML = `<span>↳ ${child.name} (${child.area}m²)</span> <button class="btn-unnest-ui">📤</button>`;
+                list.appendChild(subItem);
+
+                subItem.querySelector('.btn-unnest-ui').onclick = () => unnestRoom(r.id, child.id);
+            });
+        }
     });
+}
+
+function onRoomMerge(parentId, childId) {
+    const parent = document.getElementById(parentId);
+    const child = document.getElementById(childId);
+    if (!parent || !child) return;
+
+    if (!confirm(`האם למזג את "${child.querySelector('.room-label').innerText}" לתוך "${parent.querySelector('.room-label').innerText}"?`)) {
+        return;
+    }
+
+    const pArea = parseFloat(parent.dataset.area);
+    const cArea = parseFloat(child.dataset.area);
+    const newArea = pArea + cArea;
+
+    // Store child data (logical LX/LY normalized)
+    const childData = {
+        id: child.id,
+        name: child.querySelector('.room-label').innerText,
+        area: cArea,
+        color: child.style.backgroundColor,
+        relLX: parseFloat(child.style.left) - parseFloat(parent.style.left),
+        relLY: parseFloat(child.style.top) - parseFloat(parent.style.top)
+    };
+
+    if (!state.nestedData[parentId]) state.nestedData[parentId] = [];
+    state.nestedData[parentId].push(childData);
+
+    // Update parent area
+    parent.dataset.area = newArea.toFixed(1);
+
+    // Scale parent while maintaining aspect ratio: currentW / currentH = newW / newH
+    // newW * newH = newArea * SCALE * SCALE
+    const currentW = parseFloat(parent.style.width) / SCALE; // in meters
+    const currentH = parseFloat(parent.style.height) / SCALE; // in meters
+    const ratio = currentW / currentH;
+
+    const newW_meters = Math.sqrt(newArea * ratio);
+    const newH_meters = newArea / newW_meters;
+
+    updateRoomSize(parentId, newW_meters, newH_meters);
+
+    // Remove child
+    child.remove();
+    syncInventory();
+}
+
+function unnestRoom(parentId, childId) {
+    const parent = document.getElementById(parentId);
+    if (!parent) return;
+
+    const nestedArr = state.nestedData[parentId];
+    const childIdx = nestedArr.findIndex(c => c.id === childId);
+    if (childIdx === -1) return;
+
+    const childData = nestedArr.splice(childIdx, 1)[0];
+    if (nestedArr.length === 0) delete state.nestedData[parentId];
+
+    const pArea = parseFloat(parent.dataset.area);
+    const newArea = pArea - childData.area;
+
+    // Update parent area
+    parent.dataset.area = newArea.toFixed(1);
+
+    // Rescale parent down
+    const currentW = parseFloat(parent.style.width) / SCALE;
+    const currentH = parseFloat(parent.style.height) / SCALE;
+    const ratio = currentW / currentH;
+    const newW_meters = Math.sqrt(newArea * ratio);
+    const newH_meters = newArea / newW_meters;
+    updateRoomSize(parentId, newW_meters, newH_meters);
+
+    // Recreate child at global logical coords: parent logical + stored relative offset
+    const parentLogicalX = parseFloat(parent.style.left) - WORKSPACE_OFFSET;
+    const parentLogicalY = parseFloat(parent.style.top) - WORKSPACE_OFFSET;
+    createRoom({
+        id: childData.id,
+        name: childData.name,
+        area: childData.area,
+        floorId: parent.dataset.floor,
+        color: childData.color,
+        leftPx: parentLogicalX + childData.relLX,
+        topPx: parentLogicalY + childData.relLY
+    });
+
+    syncInventory();
 }
 
 function addNewRoomUI() {

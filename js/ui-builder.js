@@ -26,6 +26,8 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
             <button class="btn-sm btn-del" style="background:#ff4444">×</button>
             <button class="btn-sm btn-split" style="background:#2ecc71">✂️</button>
             <button class="btn-sm btn-rot" style="background:#0077be">🔄</button>
+            <button class="btn-sm btn-merge" style="background:#ff8800; display:none;">🔗</button>
+            <button class="btn-sm btn-unnest" style="background:#00aa00; display:none;">📤</button>
         </div>
         <input type="number" class="angle-pop" value="${Math.round(room.dataset.rotation)}">
         <div class="dim dim-w"></div><div class="dim dim-l"></div>
@@ -41,6 +43,17 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
     room.querySelector('.btn-del').onclick = () => onDelete(room.id);
     room.querySelector('.btn-split').onclick = () => onSplit(room.id);
     room.querySelector('.btn-rot').onmousedown = (e) => startRotate(e, room.id, camera);
+
+    const mergeBtn = room.querySelector('.btn-merge');
+    mergeBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (room.dataset.potentialParent) {
+            const event = new CustomEvent('room-merge', {
+                detail: { parentId: room.dataset.potentialParent, childId: room.id }
+            });
+            document.dispatchEvent(event);
+        }
+    };
 
     const angleInp = room.querySelector('.angle-pop');
     angleInp.onmousedown = (e) => e.stopPropagation();

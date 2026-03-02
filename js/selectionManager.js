@@ -1,7 +1,9 @@
 import { state } from './state.js';
+import { WORKSPACE_OFFSET } from './config.js';
 
 /**
- * SelectionManager - Handles multi-select and selection box logic
+ * SelectionManager - Lasso (selection box) with scaled coordinates.
+ * Uses screenToLogical so selection works at any canvasZoom.
  */
 export class SelectionManager {
     constructor(canvasCamera, mainEl) {
@@ -17,7 +19,10 @@ export class SelectionManager {
 
     initEvents() {
         this.main.addEventListener('mousedown', (e) => {
-            if (e.button === 0 && !e.shiftKey && e.target === this.main) {
+            const isEmptyArea = e.target === this.main ||
+                (e.target.classList && e.target.classList.contains('floor-plan'));
+            const notOnRoom = !e.target.closest('.room');
+            if (e.button === 0 && !e.shiftKey && isEmptyArea && notOnRoom) {
                 this.startSelection(e);
             }
         });
@@ -50,11 +55,12 @@ export class SelectionManager {
             this.boxEl.className = 'selection-box';
             plan.appendChild(this.boxEl);
         }
+
         this.boxEl.style.display = 'block';
         this.boxEl.style.width = '0px';
         this.boxEl.style.height = '0px';
-        this.boxEl.style.left = this.startX + 'px';
-        this.boxEl.style.top = this.startY + 'px';
+        this.boxEl.style.left = (this.startX + WORKSPACE_OFFSET) + 'px';
+        this.boxEl.style.top = (this.startY + WORKSPACE_OFFSET) + 'px';
 
         // Clear existing selection
         this.clearSelection();
@@ -70,8 +76,8 @@ export class SelectionManager {
         const width = Math.abs(curX - this.startX);
         const height = Math.abs(curY - this.startY);
 
-        this.boxEl.style.left = left + 'px';
-        this.boxEl.style.top = top + 'px';
+        this.boxEl.style.left = (left + WORKSPACE_OFFSET) + 'px';
+        this.boxEl.style.top = (top + WORKSPACE_OFFSET) + 'px';
         this.boxEl.style.width = width + 'px';
         this.boxEl.style.height = height + 'px';
     }
@@ -92,11 +98,9 @@ export class SelectionManager {
                 const ry = parseFloat(r.style.top);
                 const rw = parseFloat(r.style.width);
                 const rh = parseFloat(r.style.height);
-
-                // Simple box overlap
-                if (rx >= left && ry >= top && rx + rw <= right && ry + rh <= bottom) {
-                    this.selectRoom(r, true);
-                }
+                // All in same space: physical (logical + WORKSPACE_OFFSET)
+                const fullyInside = rx >= left && ry >= top && rx + rw <= right && ry + rh <= bottom;
+                if (fullyInside) this.selectRoom(r, true);
             });
         }
 

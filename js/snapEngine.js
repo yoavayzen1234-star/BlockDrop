@@ -28,10 +28,9 @@ export class SnapEngine {
         let snappedY = pos.y;
         let guides = { v: null, h: null };
 
-        // Adjust threshold based on zoom level to maintain consistent screen-pixel snapping
         const threshold = SNAP_THRESHOLD / zoom;
 
-        // Snap to grid if Alt NOT pressed
+        // Bypass snapping when Alt is held
         if (!window.isAltPressed) {
             snappedX = this.snapToGrid(pos.x);
             snappedY = this.snapToGrid(pos.y);

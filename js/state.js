@@ -13,6 +13,8 @@ export class AppState {
             panY: 0,
             zoom: 1
         };
+        // Nested rooms mapping: parentId -> array of child room ids
+        this.nestedData = {};
     }
 
     addFloor(floor) {

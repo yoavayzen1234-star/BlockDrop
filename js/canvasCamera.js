@@ -1,5 +1,6 @@
 /**
- * CanvasCamera - Handles Infinite Canvas Pan & Zoom
+ * CanvasCamera - Infinite Canvas Pan & Zoom
+ * All interactions use screenToLogical / logicalToScreen so coordinates are 1:1 with canvasZoom.
  */
 export class CanvasCamera {
     constructor(wrapperEl, mainEl) {
@@ -8,6 +9,7 @@ export class CanvasCamera {
 
         this.panX = 0;
         this.panY = 0;
+        /** @type {number} canvasZoom - scale factor for the canvas (1 = 100%) */
         this.zoom = 1;
         this.minZoom = 0.1;
         this.maxZoom = 5;
@@ -20,16 +22,26 @@ export class CanvasCamera {
         this.updateTransform();
     }
 
+    /** Alias for zoom (canvasZoom in UI/docs) */
+    get canvasZoom() {
+        return this.zoom;
+    }
+
     initEvents() {
-        // Pan with Middle Mouse or Shift + Left Mouse
+        // Pan with Right Click, Middle Mouse or Shift + Left Mouse
         this.main.addEventListener('mousedown', (e) => {
-            if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+            if (e.button === 2 || e.button === 1 || (e.button === 0 && e.shiftKey)) {
                 this.isPanning = true;
                 this.lastMouseX = e.clientX;
                 this.lastMouseY = e.clientY;
                 this.main.style.cursor = 'grabbing';
                 e.preventDefault();
             }
+        });
+
+        // Prevent context menu on right-click panning
+        this.main.addEventListener('contextmenu', (e) => {
+            if (this.isPanning || e.shiftKey) e.preventDefault();
         });
 
         window.addEventListener('mousemove', (e) => {
@@ -44,7 +56,7 @@ export class CanvasCamera {
             }
         });
 
-        window.addEventListener('mouseup', () => {
+        window.addEventListener('mouseup', (e) => {
             if (this.isPanning) {
                 this.isPanning = false;
                 this.main.style.cursor = '';
@@ -84,12 +96,23 @@ export class CanvasCamera {
         });
     }
 
-    reset() {
+    /**
+     * Center the view on the project origin (0,0 logical) at current zoom.
+     * Use for "Center View" ⌖ button.
+     */
+    centerView() {
         const rect = this.main.getBoundingClientRect();
         this.panX = rect.width / 2;
         this.panY = rect.height / 2;
-        this.zoom = 1;
         this.updateTransform();
+    }
+
+    /**
+     * Reset zoom to 100% and center view on project origin.
+     */
+    reset() {
+        this.zoom = 1;
+        this.centerView();
     }
 
     /**

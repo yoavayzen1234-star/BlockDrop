@@ -49,14 +49,12 @@ export function makeDraggable(el, camera, updateCallback) {
             const leadNewT = leader.top + dy;
             const leadW = el.offsetWidth, leadH = el.offsetHeight;
 
-            // Simple snapping based on current zoom
             const otherRooms = Array.from(plan.querySelectorAll('.room')).filter(r => !state.selectedRooms.includes(r));
-            const snapResult = snapEngine.snapRoom({ x: leadNewL, y: leadNewT }, { w: leadW, h: leadH }, otherRooms, camera.zoom);
+            const snapResult = snapEngine.snapRoom({ x: leadNewL, y: leadNewT }, { w: leadW, h: leadH }, otherRooms, camera.canvasZoom);
 
             finalSnapX = snapResult.x;
             finalSnapY = snapResult.y;
 
-            // Show guides if any snap occurred
             if (vg) {
                 vg.style.display = snapResult.guides.v !== null ? 'block' : 'none';
                 if (snapResult.guides.v !== null) vg.style.left = snapResult.guides.v + 'px';
@@ -66,12 +64,10 @@ export function makeDraggable(el, camera, updateCallback) {
                 if (snapResult.guides.h !== null) hg.style.top = snapResult.guides.h + 'px';
             }
 
-            // Move all selected rooms
             startPositions.forEach(pos => {
                 let finalX = pos.left + dx, finalY = pos.top + dy;
                 if (finalSnapX !== null && pos.el === el) {
                     finalX = finalSnapX;
-                    // Apply delta to others relative to leader
                     const diffX = finalSnapX - leadNewL;
                     startPositions.forEach(p => p.el.style.left = (p.left + dx + diffX) + 'px');
                 } else if (pos.el === el) {
@@ -86,6 +82,39 @@ export function makeDraggable(el, camera, updateCallback) {
                     pos.el.style.top = finalY + 'px';
                 }
             });
+
+            // Real-time Merge Check
+            const dRect = {
+                left: parseFloat(el.style.left),
+                top: parseFloat(el.style.top),
+                right: parseFloat(el.style.left) + el.offsetWidth,
+                bottom: parseFloat(el.style.top) + el.offsetHeight
+            };
+            let canMergeParent = null;
+            for (const sib of otherRooms) {
+                const sRect = {
+                    left: parseFloat(sib.style.left),
+                    top: parseFloat(sib.style.top),
+                    right: parseFloat(sib.style.left) + sib.offsetWidth,
+                    bottom: parseFloat(sib.style.top) + sib.offsetHeight
+                };
+                // Fully contained?
+                if (dRect.left >= sRect.left && dRect.top >= sRect.top && dRect.right <= sRect.right && dRect.bottom <= sRect.bottom) {
+                    canMergeParent = sib.id;
+                    break;
+                }
+            }
+
+            const mergeBtn = el.querySelector('.btn-merge');
+            if (mergeBtn) {
+                if (canMergeParent) {
+                    mergeBtn.style.display = 'block';
+                    el.dataset.potentialParent = canMergeParent;
+                } else {
+                    mergeBtn.style.display = 'none';
+                    delete el.dataset.potentialParent;
+                }
+            }
         };
 
         document.onmouseup = () => {

@@ -1,7 +1,9 @@
 export const SCALE = 12;
 export const SNAP_THRESHOLD = 8;
 export const WORKSPACE_SIZE = 50000;
+/** Global origin: center of infinite canvas. Logical (0,0) = CSS (WORKSPACE_OFFSET, WORKSPACE_OFFSET) = [25000, 25000]. */
 export const WORKSPACE_OFFSET = WORKSPACE_SIZE / 2;
+export const GLOBAL_ORIGIN = [WORKSPACE_OFFSET, WORKSPACE_OFFSET];
 
 export const STANDARDS_DATA = {
     "ממד": "9 מ\"ר נטו מינימום. רוחב 1.60 מ' מינימום. קירות בטון 30/40 ס\"מ.",
