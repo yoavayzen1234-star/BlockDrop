@@ -1,4 +1,4 @@
-import { SCALE, WORKSPACE_OFFSET } from './config.js';
+import { SCALE, WORKSPACE_OFFSET, escapeHtml } from './config.js';
 import { state } from './state.js';
 import { makeDraggable, setupResizing, startRotate } from './editor2d.js';
 
@@ -6,20 +6,33 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
     const room = document.createElement('div');
     room.className = 'room';
     room.id = r.id || `room-${state.roomIdCounter++}`;
-    room.dataset.area = r.area || (parseFloat(r.widthPx || 100) * parseFloat(r.heightPx || 100) / 100).toFixed(1);
+
+    const lx = r.leftPx ?? parseFloat(r.left) ?? 0;
+    const ly = r.topPx ?? parseFloat(r.top) ?? 0;
+    const wPx = parseFloat(r.widthPx || r.width || 100);
+    const hPx = parseFloat(r.heightPx || r.height || 100);
+    const wM = wPx / SCALE;
+    const hM = hPx / SCALE;
+    const area = r.area != null ? parseFloat(r.area) : (wPx * hPx) / (SCALE * SCALE);
+
+    room.dataset.area = area.toFixed(1);
     room.dataset.floor = r.floorId || r.floor;
-    room.dataset.rotation = r.rotationDeg || r.rotation || "0";
+    room.dataset.rotation = (r.rotationDeg ?? r.rotation ?? 0).toString();
     room.style.backgroundColor = r.color || "#ffffff";
+    if (r.customHeight != null && r.customHeight !== '' && Number.isFinite(parseFloat(r.customHeight))) {
+        room.dataset.customHeight = String(parseFloat(r.customHeight));
+    }
 
-    // Convert Logical LX/LY to Physical CSS (LX + OFFSET)
-    const lx = r.leftPx || parseFloat(r.left) || 0;
-    const ly = r.topPx || parseFloat(r.top) || 0;
-    room.style.left = (lx + WORKSPACE_OFFSET) + "px";
-    room.style.top = (ly + WORKSPACE_OFFSET) + "px";
-
-    room.style.width = (r.widthPx || parseFloat(r.width) || 100) + "px";
-    room.style.height = (r.heightPx || parseFloat(r.height) || 100) + "px";
+    const z = camera ? camera.zoom : 1;
+    room.style.left = (lx + WORKSPACE_OFFSET) * z + "px";
+    room.style.top = (ly + WORKSPACE_OFFSET) * z + "px";
+    room.style.width = wPx * z + "px";
+    room.style.height = hPx * z + "px";
     room.style.transform = `rotate(${room.dataset.rotation}deg)`;
+
+    const dimW = (typeof wM === 'number' && !Number.isNaN(wM)) ? wM.toFixed(1) + ' m' : '';
+    const dimL = (typeof hM === 'number' && !Number.isNaN(hM)) ? hM.toFixed(1) + ' m' : '';
+    const areaStr = (typeof area === 'number' && !Number.isNaN(area)) ? area.toFixed(0) + ' m²' : '';
 
     room.innerHTML = `
         <div class="room-btns">
@@ -31,17 +44,16 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
         <div class="room-merge-wrap">
             <button type="button" class="btn-merge" title="הטמעה בחדר הגדול" style="display:none;">🔗</button>
         </div>
-        <input type="number" class="angle-pop" value="${Math.round(room.dataset.rotation)}">
-        <div class="dim dim-w"></div><div class="dim dim-l"></div>
-        <div class="room-label">${r.name || "חדר"}</div>
-        <div class="room-info" style="font-size:9px; opacity:0.6"></div>
+        <input type="number" class="angle-pop" value="${Math.round(parseFloat(room.dataset.rotation))}">
+        <div class="dim dim-w">${dimW}</div><div class="dim dim-l">${dimL}</div>
+        <div class="room-label">${escapeHtml(r.name || "חדר")}</div>
+        <div class="room-info" style="font-size:9px; opacity:0.6">${areaStr}</div>
         <div class="h-r"></div><div class="h-l"></div><div class="h-t"></div><div class="h-b"></div>
     `;
 
     const floorContainer = document.getElementById(room.dataset.floor);
     if (floorContainer) floorContainer.appendChild(room);
 
-    // Bindings
     room.querySelector('.btn-del').onclick = () => onDelete(room.id);
     room.querySelector('.btn-split').onclick = () => onSplit(room.id);
     room.querySelector('.btn-rot').onmousedown = (e) => startRotate(e, room.id, camera);
@@ -66,8 +78,7 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
     };
     angleInp.onblur = () => { angleInp.style.display = 'none'; };
 
-    // Update size initially
-    onUpdateSize(room.id, parseFloat(room.style.width) / SCALE, parseFloat(room.style.height) / SCALE);
+    onUpdateSize(room.id, wM, hM);
 
     makeDraggable(room, camera);
     setupResizing(room, camera, onUpdateSize);
@@ -79,7 +90,7 @@ export function buildFloorTab(f, { onDeleteFloor, onSwitchFloor }) {
     const tab = document.createElement('div');
     tab.className = 'tab';
     tab.id = 'tab-' + f.id;
-    tab.innerHTML = `<span>${f.name}</span><button class="del-floor">×</button>`;
+    tab.innerHTML = `<span>${escapeHtml(f.name)}</span><button class="del-floor" aria-label="מחיקת קומה">×</button>`;
     tab.onclick = () => onSwitchFloor(f.id);
 
     tab.querySelector('.del-floor').onclick = (e) => {
@@ -94,8 +105,17 @@ export function buildFloorPlan(f) {
     plan.className = 'floor-plan';
     plan.id = f.id;
     plan.innerHTML = `
-        <div class="floor-title">${f.name}</div>
         <div class="v-guide"></div>
+        <div class="v-guide"></div>
+        <div class="v-guide"></div>
+        <div class="v-guide"></div>
+        <div class="v-guide"></div>
+        <div class="v-guide"></div>
+        <div class="h-guide"></div>
+        <div class="h-guide"></div>
+        <div class="h-guide"></div>
+        <div class="h-guide"></div>
+        <div class="h-guide"></div>
         <div class="h-guide"></div>
     `;
     return plan;

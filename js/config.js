@@ -5,6 +5,18 @@ export const WORKSPACE_SIZE = 50000;
 export const WORKSPACE_OFFSET = WORKSPACE_SIZE / 2;
 export const GLOBAL_ORIGIN = [WORKSPACE_OFFSET, WORKSPACE_OFFSET];
 
+/** Escape for safe use in HTML text (not attributes). */
+export function escapeHtml(s) {
+    if (s == null) return '';
+    const t = String(s);
+    return t
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 export const STANDARDS_DATA = {
     "ממד": "9 מ\"ר נטו מינימום. רוחב 1.60 מ' מינימום. קירות בטון 30/40 ס\"מ.",
     "נכים": "תא נגיש 1.50/2.00 מ'. רדיוס סיבוב 1.50 מ'. דלת 90 ס\"מ נפתחת החוצה.",

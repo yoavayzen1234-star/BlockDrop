@@ -1,4 +1,4 @@
-import { SCALE, SNAP_THRESHOLD } from './config.js';
+import { SCALE, SNAP_THRESHOLD, WORKSPACE_OFFSET } from './config.js';
 import { getRoomCorners } from './geometry.js';
 import { state } from './state.js';
 import { SnapEngine } from './snapEngine.js';
@@ -27,15 +27,17 @@ export function makeDraggable(el, camera, updateCallback) {
         }
 
         const startMouse = camera.screenToLogical(e.clientX, e.clientY);
+        const z = camera.zoom;
+        // Room style.left/top are in display pixels (logical * zoom); logical = (style / zoom) - WORKSPACE_OFFSET
         const startPositions = state.selectedRooms.map(r => ({
             el: r,
-            left: parseFloat(r.style.left) || 0,
-            top: parseFloat(r.style.top) || 0
+            left: (parseFloat(r.style.left) / z) - WORKSPACE_OFFSET,
+            top: (parseFloat(r.style.top) / z) - WORKSPACE_OFFSET
         }));
 
         const plan = el.parentElement;
-        const vg = plan.querySelector('.v-guide');
-        const hg = plan.querySelector('.h-guide');
+        const vGuides = plan.querySelectorAll('.v-guide');
+        const hGuides = plan.querySelectorAll('.h-guide');
 
         let dragRafId = 0;
         let lastMove = null;
@@ -54,39 +56,58 @@ export function makeDraggable(el, camera, updateCallback) {
             const leader = startPositions.find(p => p.el === el);
             const leadNewL = leader.left + dx;
             const leadNewT = leader.top + dy;
-            const leadW = el.offsetWidth, leadH = el.offsetHeight;
+            const leadW = el.offsetWidth / z;
+            const leadH = el.offsetHeight / z;
 
             const otherRooms = Array.from(plan.querySelectorAll('.room')).filter(r => !state.selectedRooms.includes(r));
-            const snapResult = snapEngine.snapRoom({ x: leadNewL, y: leadNewT }, { w: leadW, h: leadH }, otherRooms, camera.canvasZoom);
+            const otherRoomsLogical = otherRooms.map(r => ({
+                left: (parseFloat(r.style.left) / z) - WORKSPACE_OFFSET,
+                top: (parseFloat(r.style.top) / z) - WORKSPACE_OFFSET,
+                width: parseFloat(r.style.width) / z,
+                height: parseFloat(r.style.height) / z
+            }));
+            const snapResult = snapEngine.snapRoom({ x: leadNewL, y: leadNewT }, { w: leadW, h: leadH }, otherRoomsLogical, camera.canvasZoom);
 
             finalSnapX = snapResult.x;
             finalSnapY = snapResult.y;
 
-            if (vg) {
-                vg.style.display = snapResult.guides.v !== null ? 'block' : 'none';
-                if (snapResult.guides.v !== null) vg.style.left = snapResult.guides.v + 'px';
-            }
-            if (hg) {
-                hg.style.display = snapResult.guides.h !== null ? 'block' : 'none';
-                if (snapResult.guides.h !== null) hg.style.top = snapResult.guides.h + 'px';
-            }
+            const gv = snapResult.guides.v || [];
+            const gh = snapResult.guides.h || [];
+            vGuides.forEach((vg, i) => {
+                if (gv[i] != null) {
+                    vg.style.display = 'block';
+                    vg.style.left = (WORKSPACE_OFFSET + gv[i]) * z + 'px';
+                } else {
+                    vg.style.display = 'none';
+                }
+            });
+            hGuides.forEach((hg, i) => {
+                if (gh[i] != null) {
+                    hg.style.display = 'block';
+                    hg.style.top = (WORKSPACE_OFFSET + gh[i]) * z + 'px';
+                } else {
+                    hg.style.display = 'none';
+                }
+            });
 
+            const toDisplayX = (logicalX) => (WORKSPACE_OFFSET + logicalX) * z;
+            const toDisplayY = (logicalY) => (WORKSPACE_OFFSET + logicalY) * z;
             startPositions.forEach(pos => {
                 let finalX = pos.left + dx, finalY = pos.top + dy;
                 if (finalSnapX !== null && pos.el === el) {
                     finalX = finalSnapX;
                     const diffX = finalSnapX - leadNewL;
-                    startPositions.forEach(p => p.el.style.left = (p.left + dx + diffX) + 'px');
+                    startPositions.forEach(p => { p.el.style.left = toDisplayX(p.left + dx + diffX) + 'px'; });
                 } else if (pos.el === el) {
-                    pos.el.style.left = finalX + 'px';
+                    pos.el.style.left = toDisplayX(finalX) + 'px';
                 }
 
                 if (finalSnapY !== null && pos.el === el) {
                     finalY = finalSnapY;
                     const diffY = finalSnapY - leadNewT;
-                    startPositions.forEach(p => p.el.style.top = (p.top + dy + diffY) + 'px');
+                    startPositions.forEach(p => { p.el.style.top = toDisplayY(p.top + dy + diffY) + 'px'; });
                 } else if (pos.el === el) {
-                    pos.el.style.top = finalY + 'px';
+                    pos.el.style.top = toDisplayY(finalY) + 'px';
                 }
             });
 
@@ -129,42 +150,131 @@ export function makeDraggable(el, camera, updateCallback) {
 
         document.onmouseup = () => {
             document.onmousemove = null;
-            if (vg) vg.style.display = 'none';
-            if (hg) hg.style.display = 'none';
+            vGuides.forEach(vg => { vg.style.display = 'none'; });
+            hGuides.forEach(hg => { hg.style.display = 'none'; });
             if (updateCallback) updateCallback();
         };
     };
 }
 
 export function setupResizing(room, camera, updateRoomSizeFn, onComplete) {
+    const plan = room.parentElement;
+    const vGuides = plan.querySelectorAll('.v-guide');
+    const hGuides = plan.querySelectorAll('.h-guide');
+
+    const getOtherRooms = () => Array.from(plan.querySelectorAll('.room')).filter(r => r !== room);
+
+    /** Check if two segments on the same axis overlap (by more than 1px). */
+    const edgesOverlap = (a0, a1, b0, b1) => Math.min(a1, b1) - Math.max(a0, b0) > 1;
+
+    /** Check if one side of rect is touching (aligned + overlapping) another room. */
+    const isSideTouching = (rect, other, side, threshold) => {
+        const oL = parseFloat(other.style.left);
+        const oT = parseFloat(other.style.top);
+        const oW = parseFloat(other.style.width);
+        const oH = parseFloat(other.style.height);
+        const oR = oL + oW;
+        const oB = oT + oH;
+
+        if (side === 'l') {
+            return Math.abs(rect.left - oR) < threshold && edgesOverlap(rect.top, rect.bottom, oT, oB);
+        }
+        if (side === 'r') {
+            return Math.abs(rect.right - oL) < threshold && edgesOverlap(rect.top, rect.bottom, oT, oB);
+        }
+        if (side === 't') {
+            return Math.abs(rect.top - oB) < threshold && edgesOverlap(rect.left, rect.right, oL, oR);
+        }
+        // side === 'b'
+        return Math.abs(rect.bottom - oT) < threshold && edgesOverlap(rect.left, rect.right, oL, oR);
+    };
+
+    /** If exactly one edge on this axis is touching another room, move the opposite edge (keep connected edge anchored). rect/otherRooms in display px. */
+    const pickMoveSide = (initialSide, rect, otherRooms, zoom) => {
+        const threshold = SNAP_THRESHOLD;
+
+        if (initialSide === 'l' || initialSide === 'r') {
+            const cL = otherRooms.some(o => isSideTouching(rect, o, 'l', threshold));
+            const cR = otherRooms.some(o => isSideTouching(rect, o, 'r', threshold));
+            if (cL !== cR) return cL ? 'r' : 'l';
+            return initialSide;
+        }
+
+        const cT = otherRooms.some(o => isSideTouching(rect, o, 't', threshold));
+        const cB = otherRooms.some(o => isSideTouching(rect, o, 'b', threshold));
+        if (cT !== cB) return cT ? 'b' : 't';
+        return initialSide;
+    };
+
+    function updateResizeGuides() {
+        const left = parseFloat(room.style.left);
+        const top = parseFloat(room.style.top);
+        const w = room.offsetWidth;
+        const h = room.offsetHeight;
+        const otherRooms = getOtherRooms();
+        const { v: gv, h: gh } = snapEngine.getGuideLines(left, top, w, h, otherRooms, camera.canvasZoom);
+        vGuides.forEach((vg, i) => {
+            if (gv[i] != null) { vg.style.display = 'block'; vg.style.left = gv[i] + 'px'; } else { vg.style.display = 'none'; }
+        });
+        hGuides.forEach((hg, i) => {
+            if (gh[i] != null) { hg.style.display = 'block'; hg.style.top = gh[i] + 'px'; } else { hg.style.display = 'none'; }
+        });
+    }
+
+    const z = () => camera.canvasZoom;
     ['r', 'l', 't', 'b'].forEach(side => {
         const handle = room.querySelector('.h-' + side);
         if (!handle) return;
         handle.onmousedown = (e) => {
             e.stopPropagation(); e.preventDefault();
+            const zoom = z();
             const startMouse = camera.screenToLogical(e.clientX, e.clientY);
-            const sW = room.offsetWidth, sH = room.offsetHeight, sL = room.offsetLeft, sT = room.offsetTop;
+            const sW = room.offsetWidth, sH = room.offsetHeight, sL = parseFloat(room.style.left), sT = parseFloat(room.style.top);
+            const otherRooms = getOtherRooms();
+            const startRect = { left: sL, top: sT, right: sL + sW, bottom: sT + sH };
+            const moveSide = pickMoveSide(side, startRect, otherRooms, zoom);
+            const invertDelta = moveSide !== side;
+
+            updateResizeGuides();
 
             document.onmousemove = (me) => {
+                const curZoom = z();
                 const currentMouse = camera.screenToLogical(me.clientX, me.clientY);
-                const dx = currentMouse.x - startMouse.x;
-                const dy = currentMouse.y - startMouse.y;
+                const rawDx = currentMouse.x - startMouse.x;
+                const rawDy = currentMouse.y - startMouse.y;
+                const dx = (invertDelta ? -rawDx : rawDx) * curZoom;
+                const dy = (invertDelta ? -rawDy : rawDy) * curZoom;
 
-                if (side === 'r') updateRoomSizeFn(room.id, Math.max(1, (sW + dx) / SCALE), null, 'r');
-                else if (side === 'b') updateRoomSizeFn(room.id, null, Math.max(1, (sH + dy) / SCALE), 'b');
-                else if (side === 'l') {
-                    let w = Math.max(1, (sW - dx) / SCALE);
-                    room.style.left = (sL + (sW - w * SCALE)) + "px";
-                    updateRoomSizeFn(room.id, w, null, 'l');
+                let desiredLeft = sL, desiredTop = sT, desiredWidth = sW, desiredHeight = sH;
+                if (moveSide === 'r') desiredWidth = Math.max(SCALE * curZoom, sW + dx);
+                else if (moveSide === 'b') desiredHeight = Math.max(SCALE * curZoom, sH + dy);
+                else if (moveSide === 'l') {
+                    desiredLeft = sL + dx;
+                    desiredWidth = Math.max(SCALE * curZoom, sW - dx);
+                } else if (moveSide === 't') {
+                    desiredTop = sT + dy;
+                    desiredHeight = Math.max(SCALE * curZoom, sH - dy);
                 }
-                else if (side === 't') {
-                    let h = Math.max(1, (sH - dy) / SCALE);
-                    room.style.top = (sT + (sH - h * SCALE)) + "px";
-                    updateRoomSizeFn(room.id, null, h, 't');
+
+                const snapped = snapEngine.snapResizeEdge(desiredLeft, desiredTop, desiredWidth, desiredHeight, moveSide, getOtherRooms(), curZoom);
+
+                if (moveSide === 'r') {
+                    updateRoomSizeFn(room.id, Math.max(1, snapped.width / (SCALE * curZoom)), null, 'r');
+                } else if (moveSide === 'b') {
+                    updateRoomSizeFn(room.id, null, Math.max(1, snapped.height / (SCALE * curZoom)), 'b');
+                } else if (moveSide === 'l') {
+                    room.style.left = snapped.left + 'px';
+                    updateRoomSizeFn(room.id, Math.max(1, snapped.width / (SCALE * curZoom)), null, 'l');
+                } else if (moveSide === 't') {
+                    room.style.top = snapped.top + 'px';
+                    updateRoomSizeFn(room.id, null, Math.max(1, snapped.height / (SCALE * curZoom)), 't');
                 }
+                updateResizeGuides();
             };
             document.onmouseup = () => {
                 document.onmousemove = null;
+                vGuides.forEach(vg => { vg.style.display = 'none'; });
+                hGuides.forEach(hg => { hg.style.display = 'none'; });
                 if (onComplete) onComplete();
             };
         };

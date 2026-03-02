@@ -97,6 +97,34 @@
             text-align: center;
         }
 
+        .btn-rename-room {
+            border: 1px solid #cbd5e1;
+            background: #fff;
+            border-radius: 6px;
+            padding: 2px 7px;
+            cursor: pointer;
+            font-size: 12px;
+            line-height: 1.2;
+            color: #334155;
+            opacity: 0.9;
+            flex: 0 0 auto;
+        }
+
+        .btn-rename-room:hover {
+            background: #f1f5f9;
+            opacity: 1;
+        }
+
+        .inventory-name-input {
+            flex: 1;
+            min-width: 60px;
+            padding: 4px 6px;
+            font-size: 12px;
+            border: 1px solid #94a3b8;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+
         #tabs-bar {
             display: flex;
             background: #e2e8f0;
@@ -145,6 +173,15 @@
             font-weight: bold;
             align-self: center;
             margin-bottom: 5px;
+            transition: background 0.2s, transform 0.15s;
+        }
+        .add-tab:hover {
+            background: #005a94;
+            transform: scale(1.08);
+        }
+        .add-tab:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
         }
 
         #workspace {
@@ -174,14 +211,14 @@
 
         .floor-plan {
             position: absolute;
-            width: 50000px;
-            height: 50000px;
-            top: -25000px;
-            left: -25000px;
+            width: calc(50000px * var(--zoom, 1));
+            height: calc(50000px * var(--zoom, 1));
+            top: calc(-25000px * var(--zoom, 1));
+            left: calc(-25000px * var(--zoom, 1));
             background: white;
             border: 3px solid var(--wall);
             background-image: radial-gradient(#d1d1d1 1px, transparent 1px);
-            background-size: 24px 24px;
+            background-size: calc(24px * var(--zoom, 1)) calc(24px * var(--zoom, 1));
             cursor: crosshair;
             display: none;
         }
@@ -247,24 +284,36 @@
 
         .dim {
             position: absolute;
-            font-size: 10px;
-            color: #555;
-            font-weight: bold;
-            background: white;
-            padding: 0 2px;
+            direction: ltr;
+            unicode-bidi: plaintext;
+            font-variant-numeric: tabular-nums;
+            -webkit-font-smoothing: antialiased;
+            font-size: max(8px, calc(10px * var(--zoom, 1)));
+            line-height: 1.1;
+            color: #0f172a;
+            font-weight: 400;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(15, 23, 42, 0.18);
+            border-radius: 6px;
+            padding: 2px 6px;
+            box-shadow: 0 1px 10px rgba(0, 0, 0, 0.12);
+            text-shadow: 0 1px 0 rgba(255, 255, 255, 0.9);
             pointer-events: none;
+            user-select: none;
+            white-space: nowrap;
         }
 
         .dim-w {
-            top: -16px;
+            top: -22px;
             left: 50%;
             transform: translateX(-50%);
         }
 
         .dim-l {
-            left: -32px;
+            left: -46px;
             top: 50%;
             transform: translateY(-50%) rotate(-90deg);
+            transform-origin: center;
         }
 
         .h-r,
@@ -315,6 +364,13 @@
             display: flex;
             gap: 2px;
             z-index: 11;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease;
+        }
+        .room.selected .room-btns {
+            opacity: 1;
+            pointer-events: auto;
         }
 
         .room-merge-wrap {
@@ -322,6 +378,13 @@
             bottom: 4px;
             right: 4px;
             z-index: 11;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease;
+        }
+        .room.selected .room-merge-wrap {
+            opacity: 1;
+            pointer-events: auto;
         }
 
         .btn-merge {
@@ -419,32 +482,6 @@
             border-top: 1px dashed var(--guide);
         }
 
-        #standards-box {
-            background: #222;
-            color: #eee;
-            padding: 15px;
-            border-radius: 10px;
-            margin-top: auto;
-            border: 1px solid #444;
-        }
-
-        #std-input {
-            background: #333;
-            color: #fff;
-            border: 1px solid #555;
-            padding: 10px;
-            border-radius: 5px;
-            width: 100%;
-            margin-bottom: 8px;
-        }
-
-        #std-result {
-            font-size: 11px;
-            line-height: 1.5;
-            color: #2ecc71;
-            min-height: 50px;
-        }
-
         button.view-3d {
             background: var(--wall);
             color: #fff;
@@ -510,6 +547,60 @@
             z-index: 100;
             pointer-events: none;
         }
+
+        #alt-tabs-bar {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px 12px;
+            background: #f1f5f9;
+            border-bottom: 1px solid #cbd5e1;
+            min-height: 36px;
+        }
+        .alt-tab,
+        .alt-tab-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 6px 4px 10px;
+            font-size: 12px;
+            border-radius: 6px;
+            border: 1px solid #cbd5e1;
+            background: #fff;
+            color: #475569;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .alt-tab:hover,
+        .alt-tab-wrap:hover { background: #e2e8f0; }
+        .alt-tab.active,
+        .alt-tab-wrap.active {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+        }
+        .alt-tab-wrap .alt-tab-label { cursor: pointer; }
+        .alt-tab-wrap .alt-tab-del {
+            padding: 0 4px;
+            font-size: 14px;
+            line-height: 1;
+            border: none;
+            background: transparent;
+            color: inherit;
+            cursor: pointer;
+            border-radius: 3px;
+            opacity: 0.8;
+        }
+        .alt-tab-wrap .alt-tab-del:hover {
+            background: rgba(0,0,0,0.15);
+            opacity: 1;
+        }
+        .alt-tab-wrap.active .alt-tab-del:hover { background: rgba(255,255,255,0.25); }
+        #alt-tabs-bar .add-alt-tab {
+            padding: 2px 8px;
+            font-size: 14px;
+            margin-inline-start: 4px;
+        }
     </style>
 </head>
 
@@ -532,7 +623,7 @@
         <div class="input-group">
             <label>הוספת פונקציה:</label>
             <input type="text" id="newName" placeholder="שם החדר">
-            <input type="number" id="newArea" placeholder="שטח (מ" ר)">
+            <input type="number" id="newArea" placeholder="שטח (מ&quot;ר)" min="0.1" step="0.1">
             <select id="newFloorSelect"></select>
             <button id="add-room-btn"
                 style="background:var(--primary); color:white; border:none; padding:8px; width:100%; border-radius:6px; cursor:pointer; font-weight:bold;">הוסף
@@ -545,18 +636,12 @@
             <label>ניהול שטחים:</label>
             <div id="inventory-list"></div>
         </div>
-
-        <div id="standards-box">
-            <label>💡 מנוע תקנים חכם:</label>
-            <input type="text" id="std-input" placeholder="חפש: ממד, נכים, מדרגות, דלת..."
-                onkeyup="runStandardsSearch()">
-            <div id="std-result">הקלד מילה לחיפוש תקן...</div>
-        </div>
     </div>
 
     <button id="toggle-sidebar">☰</button>
 
     <div id="workspace">
+        <div id="alt-tabs-bar"></div>
         <div id="tabs-bar">
             <button class="add-tab" id="add-floor-btn" title="הוספת קומה">+</button>
         </div>

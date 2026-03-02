@@ -18,14 +18,13 @@ function createWindow() {
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: true,
-            devTools: true // Set to false for production
+            devTools: !app.isPackaged
         },
         title: "SurferPlan Desktop",
         backgroundColor: '#f0f4f8'
     });
 
-    // Remove menu bar for production
-    // mainWindow.setMenu(null);
+    if (app.isPackaged) mainWindow.setMenu(null);
 
     mainWindow.loadFile('index.html');
 }
@@ -63,11 +62,13 @@ ipcMain.handle('save-file', async (event, data) => {
         ]
     });
 
-    if (filePath) {
+    if (!filePath) return { success: false };
+    try {
         fs.writeFileSync(filePath, data, 'utf8');
         return { success: true, filePath };
+    } catch (err) {
+        return { success: false, error: err.message };
     }
-    return { success: false };
 });
 
 ipcMain.handle('load-file', async () => {
@@ -80,11 +81,13 @@ ipcMain.handle('load-file', async () => {
         properties: ['openFile']
     });
 
-    if (filePaths && filePaths.length > 0) {
+    if (!filePaths || filePaths.length === 0) return { success: false };
+    try {
         const content = fs.readFileSync(filePaths[0], 'utf8');
         return { success: true, content, filePath: filePaths[0] };
+    } catch (err) {
+        return { success: false, error: err.message };
     }
-    return { success: false };
 });
 
 // Hardware ID (Basic Fingerprint)

@@ -45,8 +45,9 @@ export class SelectionManager {
         const logical = this.camera.screenToLogical(e.clientX, e.clientY);
         this.startX = logical.x;
         this.startY = logical.y;
+        const z = this.camera.zoom;
 
-        // Find or create selection box
+        // Find or create selection box (positions in display pixels)
         const plan = document.getElementById(state.activeFloorId);
         if (!plan) return;
         this.boxEl = plan.querySelector('.selection-box');
@@ -59,8 +60,8 @@ export class SelectionManager {
         this.boxEl.style.display = 'block';
         this.boxEl.style.width = '0px';
         this.boxEl.style.height = '0px';
-        this.boxEl.style.left = (this.startX + WORKSPACE_OFFSET) + 'px';
-        this.boxEl.style.top = (this.startY + WORKSPACE_OFFSET) + 'px';
+        this.boxEl.style.left = (this.startX + WORKSPACE_OFFSET) * z + 'px';
+        this.boxEl.style.top = (this.startY + WORKSPACE_OFFSET) * z + 'px';
 
         // Clear existing selection
         this.clearSelection();
@@ -70,16 +71,17 @@ export class SelectionManager {
         const logical = this.camera.screenToLogical(e.clientX, e.clientY);
         const curX = logical.x;
         const curY = logical.y;
+        const z = this.camera.zoom;
 
         const left = Math.min(this.startX, curX);
         const top = Math.min(this.startY, curY);
         const width = Math.abs(curX - this.startX);
         const height = Math.abs(curY - this.startY);
 
-        this.boxEl.style.left = (left + WORKSPACE_OFFSET) + 'px';
-        this.boxEl.style.top = (top + WORKSPACE_OFFSET) + 'px';
-        this.boxEl.style.width = width + 'px';
-        this.boxEl.style.height = height + 'px';
+        this.boxEl.style.left = (left + WORKSPACE_OFFSET) * z + 'px';
+        this.boxEl.style.top = (top + WORKSPACE_OFFSET) * z + 'px';
+        this.boxEl.style.width = width * z + 'px';
+        this.boxEl.style.height = height * z + 'px';
     }
 
     finishSelection() {

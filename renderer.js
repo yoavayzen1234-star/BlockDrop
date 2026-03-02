@@ -1,23 +1,26 @@
-import { SCALE, STANDARDS_DATA, WORKSPACE_OFFSET } from './js/config.js';
+import { SCALE, WORKSPACE_OFFSET } from './js/config.js';
 import { state } from './js/state.js';
 import { createRoomElement, buildFloorTab, buildFloorPlan } from './js/ui-builder.js';
 import { Plan3DEngine } from './js/plan3d.engine.js';
 import { CanvasCamera } from './js/canvasCamera.js';
 import { SelectionManager } from './js/selectionManager.js';
 
-/**
- * SurferPlan Desktop - Main Application Orchestrator
- */
+const APP_NAME = 'SurferPlan Desktop';
+const APP_VERSION = '1.2.0';
 
+// --- Core refs (set in initApp) ---
 let camera = null;
 let selectionManager = null;
 let plan3dEngine = null;
 
+// --- Alternatives (חלופות) ---
+let alternatives = [];
+let currentProjectData = null;
+let activeAltIndex = 0;
+
 // Initialize
-window.addEventListener('DOMContentLoaded', async () => {
+window.addEventListener('DOMContentLoaded', () => {
     initApp();
-    const hwid = await window.api.getHWID();
-    console.log("Device ID:", hwid);
 });
 
 // Key bindings
@@ -37,6 +40,7 @@ function initApp() {
     // Initialize Camera
     camera = new CanvasCamera(wrapper, main);
     window.camera = camera;
+    camera.onZoomChange = refreshRoomsForZoom;
 
     // Initialize Selection Manager
     selectionManager = new SelectionManager(camera, main);
@@ -48,7 +52,6 @@ function initApp() {
     document.getElementById('view-3d-btn').onclick = init3D;
     document.getElementById('close-3d').onclick = close3D;
     document.getElementById('toggle-sidebar').onclick = toggleSidebar;
-    document.getElementById('std-input').onkeyup = runStandardsSearch;
     document.getElementById('reset-cam').onclick = () => camera.reset();
     document.getElementById('reset-view').onclick = () => camera.centerView();
     document.getElementById('add-floor-btn').onclick = addNewFloor;
@@ -67,32 +70,83 @@ function initApp() {
     createRoom({ name: "מחסן ציוד", area: 120, floorId: groundFloorId, color: "#e3f2fd", leftPx: 100, topPx: 100 });
 
     switchFloor(groundFloorId);
+    currentProjectData = getCurrentProjectData();
+    activeAltIndex = 0;
+    renderAltTabs();
 }
 
 function toggleSidebar() {
     document.getElementById('sidebar').classList.toggle('collapsed');
 }
 
-async function saveProject() {
-    const projectData = {
-        app: "SurferPlan Desktop",
-        version: "1.2.0",
+function getCurrentProjectData() {
+    return {
+        app: APP_NAME,
+        version: APP_VERSION,
         floors: state.floors,
         rooms: getPlanState(),
         camera: { panX: camera.panX, panY: camera.panY, zoom: camera.zoom },
         selectedFloorId: state.activeFloorId,
         counter: state.roomIdCounter
     };
-    const result = await window.api.saveFile(JSON.stringify(projectData, null, 2));
-    if (result.success) alert("Project saved successfully!");
+}
+
+async function saveProject() {
+    if (activeAltIndex === 0) currentProjectData = getCurrentProjectData();
+    const payload = {
+        app: APP_NAME,
+        version: APP_VERSION,
+        current: currentProjectData,
+        alternatives
+    };
+    const result = await window.api.saveFile(JSON.stringify(payload, null, 2));
+    if (result.success) {
+        alert(result.filePath ? `הפרויקט נשמר בהצלחה.\n${result.filePath}` : 'הפרויקט נשמר בהצלחה.');
+    } else if (result.error) {
+        alert('שגיאה בשמירה: ' + result.error);
+    } else {
+        alert('שמירה בוטלה.');
+    }
 }
 
 async function loadProject() {
     const result = await window.api.loadFile();
-    if (result.success && result.content) {
-        const data = JSON.parse(result.content);
-        applyProjectData(data);
+    if (!result.success) {
+        if (result.error) alert("שגיאה בטעינת הקובץ: " + result.error);
+        return;
     }
+    if (!result.content) return;
+    let data;
+    try {
+        data = JSON.parse(result.content);
+    } catch (e) {
+        alert("הקובץ לא תקין (לא JSON).");
+        return;
+    }
+    if (data.current != null && Array.isArray(data.alternatives)) {
+        const current = data.current;
+        if (!current.floors || !Array.isArray(current.floors) || current.floors.length === 0) {
+            alert("פורמט פרויקט לא נתמך (חסרות קומות בחלופה הנוכחית).");
+            return;
+        }
+        applyProjectData(current);
+        currentProjectData = JSON.parse(JSON.stringify(current));
+        alternatives = data.alternatives;
+    } else {
+        if (!data.floors || !Array.isArray(data.floors) || data.floors.length === 0) {
+            alert("פורמט פרויקט לא נתמך או קובץ פגום (חסרות קומות).");
+            return;
+        }
+        if (data.rooms != null && !Array.isArray(data.rooms)) {
+            alert("פורמט פרויקט לא נתמך (רשימת חדרים לא תקינה).");
+            return;
+        }
+        applyProjectData(data);
+        currentProjectData = getCurrentProjectData();
+        alternatives = [];
+    }
+    activeAltIndex = 0;
+    renderAltTabs();
 }
 
 function applyProjectData(data) {
@@ -100,7 +154,7 @@ function applyProjectData(data) {
     const wrapper = document.getElementById('canvas-wrapper');
     wrapper.innerHTML = '';
 
-    document.getElementById('tabs-bar').innerHTML = '<button class="add-tab" id="add-floor-btn">+</button>';
+    document.getElementById('tabs-bar').innerHTML = '<button class="add-tab" id="add-floor-btn" title="הוספת קומה">+</button>';
     document.getElementById('add-floor-btn').onclick = addNewFloor;
 
     state.roomIdCounter = data.counter || 0;
@@ -112,7 +166,17 @@ function applyProjectData(data) {
         wrapper.appendChild(plan);
     });
 
-    data.rooms.forEach(r => {
+    if (data.camera) {
+        camera.panX = data.camera.panX;
+        camera.panY = data.camera.panY;
+        camera.zoom = data.camera.zoom;
+        if (camera._prevZoom !== undefined) camera._prevZoom = camera.zoom;
+        camera.updateTransform();
+    } else {
+        camera.reset();
+    }
+
+    (data.rooms || []).forEach(r => {
         createRoomElement(r, camera, {
             onDelete: deleteRoom,
             onSplit: splitRoom,
@@ -120,35 +184,129 @@ function applyProjectData(data) {
         });
     });
 
-    if (data.camera) {
-        camera.panX = data.camera.panX;
-        camera.panY = data.camera.panY;
-        camera.zoom = data.camera.zoom;
-        camera.updateTransform();
-    } else {
-        camera.reset();
-    }
-
     updateHeightInputs();
     updateFloorSelect();
     switchFloor(data.selectedFloorId || state.floors[0].id);
 }
 
+function createAlternative() {
+    const name = 'חלופה ' + (alternatives.length + 1);
+    alternatives.push({
+        id: 'alt-' + Date.now(),
+        name,
+        createdAt: new Date().toISOString(),
+        projectData: JSON.parse(JSON.stringify(getCurrentProjectData()))
+    });
+    renderAltTabs();
+}
+
+function switchAltTab(index) {
+    if (index === activeAltIndex) return;
+    if (activeAltIndex === 0) {
+        currentProjectData = getCurrentProjectData();
+    } else {
+        alternatives[activeAltIndex - 1].projectData = getCurrentProjectData();
+    }
+    activeAltIndex = index;
+    if (index === 0) {
+        applyProjectData(currentProjectData);
+    } else {
+        applyProjectData(alternatives[index - 1].projectData);
+    }
+    renderAltTabs();
+}
+
+function renameAlternative(id) {
+    const alt = alternatives.find(a => a.id === id);
+    if (!alt) return;
+    const name = prompt('שם חדש:', alt.name);
+    if (name != null && name.trim()) {
+        alt.name = name.trim();
+        renderAltTabs();
+    }
+}
+
+function deleteAlternative(id) {
+    const alt = alternatives.find(a => a.id === id);
+    if (!alt || !confirm('למחוק את החלופה "' + alt.name + '"?')) return;
+    const idx = alternatives.findIndex(a => a.id === id);
+    const wasActive = activeAltIndex === idx + 1;
+    if (wasActive) {
+        switchAltTab(0);
+    } else if (activeAltIndex > idx + 1) {
+        activeAltIndex--;
+    }
+    alternatives = alternatives.filter(a => a.id !== id);
+    renderAltTabs();
+}
+
+function renderAltTabs() {
+    const bar = document.getElementById('alt-tabs-bar');
+    if (!bar) return;
+    bar.innerHTML = '';
+    const tab0 = document.createElement('button');
+    tab0.type = 'button';
+    tab0.className = 'alt-tab' + (activeAltIndex === 0 ? ' active' : '');
+    tab0.textContent = 'נוכחי';
+    tab0.onclick = () => switchAltTab(0);
+    bar.appendChild(tab0);
+    alternatives.forEach((alt, i) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'alt-tab-wrap' + (activeAltIndex === i + 1 ? ' active' : '');
+        wrap.title = 'לחיצה כפולה לשינוי שם';
+        const label = document.createElement('span');
+        label.className = 'alt-tab-label';
+        label.textContent = alt.name;
+        label.onclick = () => switchAltTab(i + 1);
+        label.ondblclick = (e) => { e.preventDefault(); renameAlternative(alt.id); };
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'alt-tab-del';
+        delBtn.textContent = '×';
+        delBtn.title = 'מחק חלופה';
+        delBtn.onclick = (e) => { e.stopPropagation(); deleteAlternative(alt.id); };
+        wrap.appendChild(label);
+        wrap.appendChild(delBtn);
+        bar.appendChild(wrap);
+    });
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'alt-tab add-alt-tab';
+    addBtn.textContent = '+';
+    addBtn.title = 'צור חלופה';
+    addBtn.onclick = createAlternative;
+    bar.appendChild(addBtn);
+}
+
+/** When zoom changes, redraw room positions/sizes in display pixels so text stays crisp (no scale blur). */
+function refreshRoomsForZoom(oldZoom, newZoom) {
+    document.querySelectorAll('.room').forEach(room => {
+        const logicalLeft = (parseFloat(room.style.left) / oldZoom) - WORKSPACE_OFFSET;
+        const logicalTop = (parseFloat(room.style.top) / oldZoom) - WORKSPACE_OFFSET;
+        const logicalW = parseFloat(room.style.width) / oldZoom;
+        const logicalH = parseFloat(room.style.height) / oldZoom;
+        room.style.left = (WORKSPACE_OFFSET + logicalLeft) * newZoom + 'px';
+        room.style.top = (WORKSPACE_OFFSET + logicalTop) * newZoom + 'px';
+        room.style.width = logicalW * newZoom + 'px';
+        room.style.height = logicalH * newZoom + 'px';
+    });
+    refreshUnderlays();
+}
+
+/** Returns room state in 2D logical coordinates (same origin as config) for 3D alignment. */
 function getPlanState() {
+    const z = camera ? camera.zoom : 1;
     return Array.from(document.querySelectorAll('.room')).map(r => ({
         id: r.id,
         name: r.querySelector('.room-label').innerText,
         floorId: r.dataset.floor,
-        // Convert Physical CSS back to Logical LX/LY (Physical - OFFSET)
-        leftPx: parseFloat(r.style.left) - WORKSPACE_OFFSET,
-        topPx: parseFloat(r.style.top) - WORKSPACE_OFFSET,
-        widthPx: parseFloat(r.style.width),
-        heightPx: parseFloat(r.style.height),
+        leftPx: (parseFloat(r.style.left) / z) - WORKSPACE_OFFSET,
+        topPx: (parseFloat(r.style.top) / z) - WORKSPACE_OFFSET,
+        widthPx: parseFloat(r.style.width) / z,
+        heightPx: parseFloat(r.style.height) / z,
         rotationDeg: parseFloat(r.dataset.rotation || 0),
         color: r.style.backgroundColor,
-        customHeight: r.dataset.customHeight ? parseFloat(r.dataset.customHeight) : undefined,
-        outer: r.polygon ? r.polygon.outer : null,
-        holes: r.polygon ? r.polygon.holes : []
+        customHeight: r.dataset.customHeight ? parseFloat(r.dataset.customHeight) : undefined
     }));
 }
 
@@ -158,8 +316,106 @@ function init3D() {
     if (!plan3dEngine) {
         plan3dEngine = new Plan3DEngine();
         plan3dEngine.init(container);
+        plan3dEngine.onRoomDblClick = (roomId) => openHeightModal(roomId);
     }
-    plan3dEngine.buildFromState(state.floors, getPlanState());
+    plan3dEngine.buildFromState(state.floors, getPlanState(), { fitCamera: true });
+}
+
+function ensureHeightModal() {
+    const container = document.getElementById('three-container');
+    let modal = document.getElementById('height-modal');
+    if (modal) return modal;
+
+    modal = document.createElement('div');
+    modal.id = 'height-modal';
+    modal.style.cssText = [
+        'position:absolute',
+        'inset:0',
+        'display:none',
+        'background:rgba(0,0,0,0.35)',
+        'z-index:3000',
+        'align-items:center',
+        'justify-content:center',
+        "font-family:'Segoe UI', system-ui, sans-serif"
+    ].join(';');
+
+    modal.innerHTML = `
+        <div style="width:320px; background:#fff; border-radius:12px; padding:14px; box-shadow:0 10px 30px rgba(0,0,0,0.25)">
+            <div style="font-weight:700; margin-bottom:8px;">גובה לחדר</div>
+            <input id="height-modal-input" type="number" step="0.1" min="0.1"
+                style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:8px; box-sizing:border-box; font-size:14px;" />
+            <div style="font-size:12px; color:#64748b; margin-top:6px;">ריק = חזרה לגובה קומה</div>
+            <div style="display:flex; gap:8px; margin-top:12px;">
+                <button id="height-modal-cancel" type="button"
+                    style="flex:1; padding:10px; border-radius:8px; border:1px solid #cbd5e1; background:#fff; cursor:pointer;">
+                    ביטול
+                </button>
+                <button id="height-modal-save" type="button"
+                    style="flex:1; padding:10px; border-radius:8px; border:none; background:#0077be; color:#fff; cursor:pointer; font-weight:700;">
+                    שמור
+                </button>
+            </div>
+        </div>
+    `;
+
+    modal.addEventListener('mousedown', (e) => {
+        if (e.target === modal) modal.style.display = 'none';
+    });
+
+    container.appendChild(modal);
+    return modal;
+}
+
+function openHeightModal(roomId) {
+    if (!plan3dEngine) return;
+    const roomEl = document.getElementById(roomId);
+    if (!roomEl) return;
+
+    const modal = ensureHeightModal();
+    const input = modal.querySelector('#height-modal-input');
+    const btnSave = modal.querySelector('#height-modal-save');
+    const btnCancel = modal.querySelector('#height-modal-cancel');
+
+    const floor = state.getFloorById(roomEl.dataset.floor);
+    const fallback = floor?.height ?? 3.5;
+    const current = roomEl.dataset.customHeight ? parseFloat(roomEl.dataset.customHeight) : fallback;
+
+    input.value = Number.isFinite(current) ? String(current) : String(fallback);
+    modal.style.display = 'flex';
+    input.focus();
+    input.select();
+
+    const cleanup = () => {
+        btnSave.onclick = null;
+        btnCancel.onclick = null;
+        input.onkeydown = null;
+    };
+
+    const close = () => {
+        modal.style.display = 'none';
+        cleanup();
+    };
+
+    const save = () => {
+        const trimmed = (input.value ?? '').toString().trim();
+        if (trimmed === '') {
+            delete roomEl.dataset.customHeight;
+        } else {
+            const h = parseFloat(trimmed);
+            if (!Number.isFinite(h) || h <= 0) return;
+            roomEl.dataset.customHeight = String(h);
+        }
+        plan3dEngine.buildFromState(state.floors, getPlanState());
+        close();
+    };
+
+    input.onkeydown = (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); close(); }
+        if (e.key === 'Enter') { e.preventDefault(); save(); }
+    };
+
+    btnCancel.onclick = close;
+    btnSave.onclick = save;
 }
 
 function close3D() {
@@ -258,11 +514,12 @@ function updateRoomSize(id, wM, hM, anchor = 'tl') {
     if (!room) return;
     const area = parseFloat(room.dataset.area);
     if (anchor === 'r' || anchor === 'l') hM = area / wM; else wM = area / hM;
-    room.style.width = (wM * SCALE) + 'px';
-    room.style.height = (hM * SCALE) + 'px';
-    room.querySelector('.dim-w').innerText = wM.toFixed(1) + 'm';
-    room.querySelector('.dim-l').innerText = hM.toFixed(1) + 'm';
-    room.querySelector('.room-info').innerText = area.toFixed(0) + 'm²';
+    const z = camera ? camera.zoom : 1;
+    room.style.width = (wM * SCALE * z) + 'px';
+    room.style.height = (hM * SCALE * z) + 'px';
+    room.querySelector('.dim-w').innerText = wM.toFixed(1) + ' m';
+    room.querySelector('.dim-l').innerText = hM.toFixed(1) + ' m';
+    room.querySelector('.room-info').innerText = area.toFixed(0) + ' m²';
 }
 
 function splitRoom(id) {
@@ -272,13 +529,14 @@ function splitRoom(id) {
     if (splitVal && !isNaN(splitVal) && parseFloat(splitVal) < totalArea) {
         room.dataset.area = (totalArea - parseFloat(splitVal)).toFixed(1);
         updateRoomSize(id, Math.sqrt(room.dataset.area), Math.sqrt(room.dataset.area));
+        const z = camera ? camera.zoom : 1;
         createRoom({
             name: `${room.querySelector('.room-label').innerText} (פוצל)`,
             area: parseFloat(splitVal),
             floorId: room.dataset.floor,
             color: room.style.backgroundColor,
-            leftPx: parseFloat(room.style.left) - WORKSPACE_OFFSET + 20,
-            topPx: parseFloat(room.style.top) - WORKSPACE_OFFSET + 20
+            leftPx: (parseFloat(room.style.left) / z) - WORKSPACE_OFFSET + 20,
+            topPx: (parseFloat(room.style.top) / z) - WORKSPACE_OFFSET + 20
         });
         syncInventory();
     }
@@ -332,20 +590,109 @@ function syncInventory() {
     // Top-level rooms
     document.querySelectorAll(`.room[data-floor="${state.activeFloorId}"]`).forEach(r => {
         const areaM2 = getRoomAreaM2(r);
+
         const item = document.createElement('div');
         item.className = 'inventory-item';
         item.style.display = "flex";
         item.style.justifyContent = "space-between";
+        item.style.alignItems = "center";
+        item.style.gap = "8px";
         item.style.marginBottom = "5px";
         item.style.fontWeight = "bold";
-        item.innerHTML = `<span>${r.querySelector('.room-label').innerText}</span> <input type="number" class="inventory-area-input" value="${areaM2.toFixed(1)}" min="0.1" step="0.1" title="שטח במ\"ר">`;
-        list.appendChild(item);
 
-        item.querySelector('input').onchange = (e) => {
-            r.dataset.area = e.target.value;
-            updateRoomSize(r.id, Math.sqrt(e.target.value), Math.sqrt(e.target.value));
+        const left = document.createElement('div');
+        left.className = "inventory-left";
+        left.style.display = "flex";
+        left.style.alignItems = "center";
+        left.style.gap = "6px";
+        left.style.flex = "1";
+        left.style.minWidth = "0";
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = "inventory-room-name";
+        nameSpan.textContent = r.querySelector('.room-label')?.innerText || "חדר";
+        nameSpan.title = "לחיצה כפולה לשינוי שם";
+        nameSpan.style.overflow = "hidden";
+        nameSpan.style.textOverflow = "ellipsis";
+        nameSpan.style.whiteSpace = "nowrap";
+        nameSpan.style.cursor = "text";
+
+        const nameInput = document.createElement('input');
+        nameInput.type = "text";
+        nameInput.className = "inventory-name-input";
+        nameInput.value = (nameSpan.textContent || "").trim();
+        nameInput.style.display = "none";
+
+        const beginRename = () => {
+            nameInput.value = (r.querySelector('.room-label')?.innerText || "").trim();
+            nameSpan.style.display = "none";
+            nameInput.style.display = "block";
+            nameInput.focus();
+            nameInput.select();
+        };
+
+        const commitRename = () => {
+            if (nameInput.style.display === "none") return;
+            const trimmed = (nameInput.value || "").trim();
+            nameSpan.style.display = "";
+            nameInput.style.display = "none";
+            if (!trimmed) { syncInventory(); return; }
+            const label = r.querySelector('.room-label');
+            if (label) label.innerText = trimmed;
             syncInventory();
         };
+
+        const cancelRename = () => {
+            if (nameInput.style.display === "none") return;
+            syncInventory();
+        };
+
+        nameSpan.ondblclick = (e) => {
+            e.preventDefault();
+            beginRename();
+        };
+
+        nameInput.onblur = commitRename;
+        nameInput.onkeydown = (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+            if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
+        };
+
+        const renameBtn = document.createElement('button');
+        renameBtn.type = "button";
+        renameBtn.className = "btn-rename-room";
+        renameBtn.title = "שינוי שם";
+        renameBtn.textContent = "✎";
+        renameBtn.onclick = (e) => {
+            e.stopPropagation();
+            beginRename();
+        };
+
+        left.appendChild(nameSpan);
+        left.appendChild(nameInput);
+        left.appendChild(renameBtn);
+
+        const areaInput = document.createElement('input');
+        areaInput.type = "number";
+        areaInput.className = "inventory-area-input";
+        areaInput.value = areaM2.toFixed(1);
+        areaInput.min = "0.1";
+        areaInput.step = "0.1";
+        areaInput.title = "שטח במ\"ר";
+        areaInput.onchange = (e) => {
+            const next = parseFloat(e.target.value);
+            if (!Number.isFinite(next) || next <= 0) {
+                e.target.value = getRoomAreaM2(r).toFixed(1);
+                return;
+            }
+            r.dataset.area = String(next);
+            updateRoomSize(r.id, Math.sqrt(next), Math.sqrt(next));
+            syncInventory();
+        };
+
+        item.appendChild(left);
+        item.appendChild(areaInput);
+        list.appendChild(item);
 
         // Show nested rooms for this parent
         if (state.nestedData[r.id]) {
@@ -354,13 +701,91 @@ function syncInventory() {
                 subItem.className = 'inventory-sub-item';
                 subItem.style.display = "flex";
                 subItem.style.justifyContent = "space-between";
+                subItem.style.alignItems = "center";
+                subItem.style.gap = "8px";
                 subItem.style.paddingRight = "20px";
                 subItem.style.fontSize = "12px";
                 subItem.style.color = "#666";
-                subItem.innerHTML = `<span>↳ ${child.name} (${child.area}m²)</span> <button class="btn-unnest-ui">📤</button>`;
-                list.appendChild(subItem);
 
-                subItem.querySelector('.btn-unnest-ui').onclick = () => unnestRoom(r.id, child.id);
+                const subLeft = document.createElement('div');
+                subLeft.style.display = "flex";
+                subLeft.style.alignItems = "center";
+                subLeft.style.gap = "6px";
+                subLeft.style.flex = "1";
+                subLeft.style.minWidth = "0";
+
+                const childName = document.createElement('span');
+                childName.textContent = `↳ ${child.name} (${child.area}m²)`;
+                childName.title = "לחיצה כפולה לשינוי שם";
+                childName.style.overflow = "hidden";
+                childName.style.textOverflow = "ellipsis";
+                childName.style.whiteSpace = "nowrap";
+                childName.style.cursor = "text";
+
+                const childNameInput = document.createElement('input');
+                childNameInput.type = "text";
+                childNameInput.className = "inventory-name-input";
+                childNameInput.value = (child.name || "").trim();
+                childNameInput.style.display = "none";
+
+                const beginChildRename = () => {
+                    childNameInput.value = (child.name || "").trim();
+                    childName.style.display = "none";
+                    childNameInput.style.display = "block";
+                    childNameInput.focus();
+                    childNameInput.select();
+                };
+
+                const commitChildRename = () => {
+                    if (childNameInput.style.display === "none") return;
+                    const trimmed = (childNameInput.value || "").trim();
+                    childName.style.display = "";
+                    childNameInput.style.display = "none";
+                    if (!trimmed) { syncInventory(); return; }
+                    child.name = trimmed;
+                    syncInventory();
+                };
+
+                const cancelChildRename = () => {
+                    if (childNameInput.style.display === "none") return;
+                    syncInventory();
+                };
+
+                childName.ondblclick = (e) => {
+                    e.preventDefault();
+                    beginChildRename();
+                };
+
+                childNameInput.onblur = commitChildRename;
+                childNameInput.onkeydown = (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); commitChildRename(); }
+                    if (e.key === 'Escape') { e.preventDefault(); cancelChildRename(); }
+                };
+
+                const childRenameBtn = document.createElement('button');
+                childRenameBtn.type = "button";
+                childRenameBtn.className = "btn-rename-room";
+                childRenameBtn.title = "שינוי שם";
+                childRenameBtn.textContent = "✎";
+                childRenameBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    beginChildRename();
+                };
+
+                subLeft.appendChild(childName);
+                subLeft.appendChild(childNameInput);
+                subLeft.appendChild(childRenameBtn);
+
+                const unnestBtn = document.createElement('button');
+                unnestBtn.type = "button";
+                unnestBtn.className = "btn-unnest-ui";
+                unnestBtn.textContent = "📤";
+                unnestBtn.title = "הוצאה מהטמעה";
+                unnestBtn.onclick = () => unnestRoom(r.id, child.id);
+
+                subItem.appendChild(subLeft);
+                subItem.appendChild(unnestBtn);
+                list.appendChild(subItem);
             });
         }
     });
@@ -378,15 +803,16 @@ function onRoomMerge(parentId, childId) {
     const pArea = parseFloat(parent.dataset.area);
     const cArea = parseFloat(child.dataset.area);
     const newArea = pArea + cArea;
+    const z = camera ? camera.zoom : 1;
 
-    // Store child data (logical LX/LY normalized)
+    // Store child data (logical relative offset)
     const childData = {
         id: child.id,
         name: child.querySelector('.room-label').innerText,
         area: cArea,
         color: child.style.backgroundColor,
-        relLX: parseFloat(child.style.left) - parseFloat(parent.style.left),
-        relLY: parseFloat(child.style.top) - parseFloat(parent.style.top)
+        relLX: (parseFloat(child.style.left) - parseFloat(parent.style.left)) / z,
+        relLY: (parseFloat(child.style.top) - parseFloat(parent.style.top)) / z
     };
 
     if (!state.nestedData[parentId]) state.nestedData[parentId] = [];
@@ -395,10 +821,9 @@ function onRoomMerge(parentId, childId) {
     // Update parent area
     parent.dataset.area = newArea.toFixed(1);
 
-    // Scale parent while maintaining aspect ratio: currentW / currentH = newW / newH
-    // newW * newH = newArea * SCALE * SCALE
-    const currentW = parseFloat(parent.style.width) / SCALE; // in meters
-    const currentH = parseFloat(parent.style.height) / SCALE; // in meters
+    // Scale parent while maintaining aspect ratio (use logical size: display/zoom)
+    const currentW = parseFloat(parent.style.width) / z / SCALE; // in meters
+    const currentH = parseFloat(parent.style.height) / z / SCALE; // in meters
     const ratio = currentW / currentH;
 
     const newW_meters = Math.sqrt(newArea * ratio);
@@ -428,17 +853,18 @@ function unnestRoom(parentId, childId) {
     // Update parent area
     parent.dataset.area = newArea.toFixed(1);
 
-    // Rescale parent down
-    const currentW = parseFloat(parent.style.width) / SCALE;
-    const currentH = parseFloat(parent.style.height) / SCALE;
+    const z = camera ? camera.zoom : 1;
+    // Rescale parent down (logical size)
+    const currentW = parseFloat(parent.style.width) / z / SCALE;
+    const currentH = parseFloat(parent.style.height) / z / SCALE;
     const ratio = currentW / currentH;
     const newW_meters = Math.sqrt(newArea * ratio);
     const newH_meters = newArea / newW_meters;
     updateRoomSize(parentId, newW_meters, newH_meters);
 
     // Recreate child at global logical coords: parent logical + stored relative offset
-    const parentLogicalX = parseFloat(parent.style.left) - WORKSPACE_OFFSET;
-    const parentLogicalY = parseFloat(parent.style.top) - WORKSPACE_OFFSET;
+    const parentLogicalX = (parseFloat(parent.style.left) / z) - WORKSPACE_OFFSET;
+    const parentLogicalY = (parseFloat(parent.style.top) / z) - WORKSPACE_OFFSET;
     createRoom({
         id: childData.id,
         name: childData.name,
@@ -453,11 +879,20 @@ function unnestRoom(parentId, childId) {
 }
 
 function addNewRoomUI() {
-    const n = document.getElementById('newName').value;
-    const a = document.getElementById('newArea').value;
+    const n = (document.getElementById('newName').value || '').trim();
+    const a = parseFloat(document.getElementById('newArea').value);
     const f = document.getElementById('newFloorSelect').value;
+    if (!n) {
+        alert('הזן שם לחדר.');
+        return;
+    }
+    if (!Number.isFinite(a) || a <= 0) {
+        alert('הזן שטח תקין (מספר גדול מ־0).');
+        return;
+    }
+    if (!f) return;
     const { x, y } = camera.screenToLogical(window.innerWidth / 2, window.innerHeight / 2);
-    if (n && a > 0) createRoom({ name: n, area: parseFloat(a), floorId: f, leftPx: x, topPx: y });
+    createRoom({ name: n, area: a, floorId: f, leftPx: x, topPx: y });
 }
 
 function deleteRoom(id) {
@@ -472,12 +907,4 @@ function deleteSelectedRooms() {
     state.selectedRooms = [];
     syncInventory();
     refreshUnderlays();
-}
-
-function runStandardsSearch() {
-    const val = document.getElementById('std-input').value.toLowerCase();
-    const res = document.getElementById('std-result');
-    if (!val) { res.innerText = "הקלד מילה לחיפוש תקן..."; return; }
-    const key = Object.keys(STANDARDS_DATA).find(k => val.includes(k) || k.includes(val));
-    res.innerText = key ? STANDARDS_DATA[key] : "מחפש בתקנות...";
 }

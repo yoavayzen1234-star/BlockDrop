@@ -20,6 +20,9 @@ export class CanvasCamera {
 
         this._transformRafId = null;
         this._rectCache = null;
+        this._prevZoom = this.zoom;
+        /** Called when zoom changes: (oldZoom, newZoom) => void. Used to refresh room/floor dimensions for crisp rendering. */
+        this.onZoomChange = null;
 
         this.initEvents();
         this.updateTransform();
@@ -106,7 +109,13 @@ export class CanvasCamera {
         if (this._transformRafId !== null) return;
         this._transformRafId = requestAnimationFrame(() => {
             this._transformRafId = null;
-            this.wrapper.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.zoom})`;
+            /* No scale() — zoom applied via --zoom + room/floor dimensions so text stays crisp */
+            this.wrapper.style.transform = `translate(${this.panX}px, ${this.panY}px)`;
+            this.wrapper.style.setProperty('--zoom', String(this.zoom));
+            if (this._prevZoom !== this.zoom && this.onZoomChange) {
+                this.onZoomChange(this._prevZoom, this.zoom);
+                this._prevZoom = this.zoom;
+            }
             const zoomLabel = document.getElementById('zoom-level');
             if (zoomLabel) zoomLabel.innerText = Math.round(this.zoom * 100) + '%';
         });
