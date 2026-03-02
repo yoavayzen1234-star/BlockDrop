@@ -51,6 +51,7 @@ function initApp() {
     document.getElementById('std-input').onkeyup = runStandardsSearch;
     document.getElementById('reset-cam').onclick = () => camera.reset();
     document.getElementById('reset-view').onclick = () => camera.centerView();
+    document.getElementById('add-floor-btn').onclick = addNewFloor;
 
     // Listen for room-merge events from editor2d.js
     document.addEventListener('room-merge', (e) => onRoomMerge(e.detail.parentId, e.detail.childId));
@@ -221,18 +222,25 @@ function refreshUnderlays() {
     if (!currentPlan) return;
     currentPlan.querySelectorAll('.room-ghost').forEach(g => g.remove());
     const currentIdx = state.getFloorIndex(state.activeFloorId);
-    for (let i = 0; i < currentIdx; i++) {
-        const lowerFloor = state.floors[i];
-        document.querySelectorAll(`.room[data-floor="${lowerFloor.id}"]`).forEach(r => {
-            const ghost = document.createElement('div');
-            ghost.className = 'room-ghost';
-            ghost.style.width = r.style.width; ghost.style.height = r.style.height;
-            ghost.style.left = r.style.left; ghost.style.top = r.style.top;
-            ghost.style.transform = r.style.transform;
-            ghost.innerText = `נעול (${lowerFloor.name})`;
-            currentPlan.appendChild(ghost);
-        });
-    }
+    if (currentIdx === 0) return;
+    const allRooms = document.querySelectorAll('.room');
+    const lowerFloorIds = new Set(state.floors.slice(0, currentIdx).map(f => f.id));
+    const floorNames = Object.fromEntries(state.floors.slice(0, currentIdx).map(f => [f.id, f.name]));
+    const fragment = document.createDocumentFragment();
+    allRooms.forEach(r => {
+        const fid = r.dataset.floor;
+        if (!lowerFloorIds.has(fid)) return;
+        const ghost = document.createElement('div');
+        ghost.className = 'room-ghost';
+        ghost.style.width = r.style.width;
+        ghost.style.height = r.style.height;
+        ghost.style.left = r.style.left;
+        ghost.style.top = r.style.top;
+        ghost.style.transform = r.style.transform;
+        ghost.innerText = `נעול (${floorNames[fid]})`;
+        fragment.appendChild(ghost);
+    });
+    currentPlan.appendChild(fragment);
 }
 
 function createRoom(roomObj) {

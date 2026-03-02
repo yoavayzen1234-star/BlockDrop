@@ -317,6 +317,31 @@
             z-index: 11;
         }
 
+        .room-merge-wrap {
+            position: absolute;
+            bottom: 4px;
+            right: 4px;
+            z-index: 11;
+        }
+
+        .btn-merge {
+            background: transparent !important;
+            border: none !important;
+            color: #000;
+            cursor: pointer;
+            padding: 1px;
+            font-size: 7px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 1;
+            font-weight: bold;
+        }
+        .btn-merge:hover {
+            color: #000;
+        }
+
         .btn-sm {
             border: none;
             cursor: pointer;
@@ -533,7 +558,7 @@
 
     <div id="workspace">
         <div id="tabs-bar">
-            <!-- Add floor button is added via renderer.js -->
+            <button class="add-tab" id="add-floor-btn" title="הוספת קומה">+</button>
         </div>
         <div id="main">
             <div id="canvas-wrapper">

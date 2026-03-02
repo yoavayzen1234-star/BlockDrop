@@ -26,8 +26,10 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
             <button class="btn-sm btn-del" style="background:#ff4444">×</button>
             <button class="btn-sm btn-split" style="background:#2ecc71">✂️</button>
             <button class="btn-sm btn-rot" style="background:#0077be">🔄</button>
-            <button class="btn-sm btn-merge" style="background:#ff8800; display:none;">🔗</button>
             <button class="btn-sm btn-unnest" style="background:#00aa00; display:none;">📤</button>
+        </div>
+        <div class="room-merge-wrap">
+            <button type="button" class="btn-merge" title="הטמעה בחדר הגדול" style="display:none;">🔗</button>
         </div>
         <input type="number" class="angle-pop" value="${Math.round(room.dataset.rotation)}">
         <div class="dim dim-w"></div><div class="dim dim-l"></div>

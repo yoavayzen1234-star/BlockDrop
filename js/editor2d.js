@@ -37,12 +37,19 @@ export function makeDraggable(el, camera, updateCallback) {
         const vg = plan.querySelector('.v-guide');
         const hg = plan.querySelector('.h-guide');
 
-        document.onmousemove = (me) => {
-            const currentMouse = camera.screenToLogical(me.clientX, me.clientY);
+        let dragRafId = 0;
+        let lastMove = null;
+
+        const applyDrag = () => {
+            dragRafId = 0;
+            if (!lastMove) return;
+            const { clientX, clientY } = lastMove;
+            lastMove = null;
+
+            const currentMouse = camera.screenToLogical(clientX, clientY);
             const dx = currentMouse.x - startMouse.x;
             const dy = currentMouse.y - startMouse.y;
 
-            // Core Snapping Logic
             let finalSnapX = null, finalSnapY = null;
             const leader = startPositions.find(p => p.el === el);
             const leadNewL = leader.left + dx;
@@ -83,7 +90,6 @@ export function makeDraggable(el, camera, updateCallback) {
                 }
             });
 
-            // Real-time Merge Check
             const dRect = {
                 left: parseFloat(el.style.left),
                 top: parseFloat(el.style.top),
@@ -98,7 +104,6 @@ export function makeDraggable(el, camera, updateCallback) {
                     right: parseFloat(sib.style.left) + sib.offsetWidth,
                     bottom: parseFloat(sib.style.top) + sib.offsetHeight
                 };
-                // Fully contained?
                 if (dRect.left >= sRect.left && dRect.top >= sRect.top && dRect.right <= sRect.right && dRect.bottom <= sRect.bottom) {
                     canMergeParent = sib.id;
                     break;
@@ -115,6 +120,11 @@ export function makeDraggable(el, camera, updateCallback) {
                     delete el.dataset.potentialParent;
                 }
             }
+        };
+
+        document.onmousemove = (me) => {
+            lastMove = { clientX: me.clientX, clientY: me.clientY };
+            if (dragRafId === 0) dragRafId = requestAnimationFrame(applyDrag);
         };
 
         document.onmouseup = () => {

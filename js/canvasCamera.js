@@ -18,8 +18,20 @@ export class CanvasCamera {
         this.lastMouseX = 0;
         this.lastMouseY = 0;
 
+        this._transformRafId = null;
+        this._rectCache = null;
+
         this.initEvents();
         this.updateTransform();
+    }
+
+    _getMainRect() {
+        if (!this._rectCache) this._rectCache = this.main.getBoundingClientRect();
+        return this._rectCache;
+    }
+
+    _invalidateRect() {
+        this._rectCache = null;
     }
 
     /** Alias for zoom (canvasZoom in UI/docs) */
@@ -69,14 +81,16 @@ export class CanvasCamera {
             const delta = e.deltaY > 0 ? 0.9 : 1.1;
             this.applyZoom(delta, e.clientX, e.clientY);
         }, { passive: false });
+
+        window.addEventListener('resize', () => this._invalidateRect());
     }
 
     applyZoom(factor, centerX, centerY) {
         const newZoom = Math.min(Math.max(this.zoom * factor, this.minZoom), this.maxZoom);
         if (newZoom === this.zoom) return;
 
-        // Zoom towards mouse cursor
-        const rect = this.main.getBoundingClientRect();
+        this._invalidateRect();
+        const rect = this._getMainRect();
         const mouseX = centerX - rect.left;
         const mouseY = centerY - rect.top;
 
@@ -89,7 +103,9 @@ export class CanvasCamera {
     }
 
     updateTransform() {
-        requestAnimationFrame(() => {
+        if (this._transformRafId !== null) return;
+        this._transformRafId = requestAnimationFrame(() => {
+            this._transformRafId = null;
             this.wrapper.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.zoom})`;
             const zoomLabel = document.getElementById('zoom-level');
             if (zoomLabel) zoomLabel.innerText = Math.round(this.zoom * 100) + '%';
@@ -101,7 +117,7 @@ export class CanvasCamera {
      * Use for "Center View" ⌖ button.
      */
     centerView() {
-        const rect = this.main.getBoundingClientRect();
+        const rect = this._getMainRect();
         this.panX = rect.width / 2;
         this.panY = rect.height / 2;
         this.updateTransform();
@@ -119,7 +135,7 @@ export class CanvasCamera {
      * Convert screen coordinates to logical canvas coordinates
      */
     screenToLogical(x, y) {
-        const rect = this.main.getBoundingClientRect();
+        const rect = this._getMainRect();
         return {
             x: (x - rect.left - this.panX) / this.zoom,
             y: (y - rect.top - this.panY) / this.zoom
@@ -130,7 +146,7 @@ export class CanvasCamera {
      * Convert logical canvas coordinates to screen coordinates
      */
     logicalToScreen(x, y) {
-        const rect = this.main.getBoundingClientRect();
+        const rect = this._getMainRect();
         return {
             x: x * this.zoom + this.panX + rect.left,
             y: y * this.zoom + this.panY + rect.top
