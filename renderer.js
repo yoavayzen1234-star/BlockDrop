@@ -49,6 +49,17 @@ function initApp() {
     document.getElementById('save-btn').onclick = saveProject;
     document.getElementById('load-btn').onclick = loadProject;
     document.getElementById('add-room-btn').onclick = addNewRoomUI;
+    const shapeToggleBtn = document.getElementById('shape-toggle-btn');
+    if (shapeToggleBtn) {
+        shapeToggleBtn.onclick = () => {
+            const isEllipse = shapeToggleBtn.dataset.shape === 'ellipse';
+            shapeToggleBtn.dataset.shape = isEllipse ? 'rect' : 'ellipse';
+            shapeToggleBtn.title = isEllipse ? 'עיגול – לחץ כדי להוסיף חדר כעיגול' : 'מלבן – החדר הבא יהיה מלבן';
+            shapeToggleBtn.textContent = isEllipse ? '⭕' : '🔘';
+            shapeToggleBtn.style.background = isEllipse ? '#fff' : 'rgba(0, 119, 190, 0.2)';
+            shapeToggleBtn.style.borderColor = isEllipse ? '#cbd5e1' : 'var(--primary)';
+        };
+    }
     document.getElementById('view-3d-btn').onclick = init3D;
     document.getElementById('close-3d').onclick = close3D;
     document.getElementById('toggle-sidebar').onclick = toggleSidebar;
@@ -58,6 +69,14 @@ function initApp() {
 
     // Listen for room-merge events from editor2d.js
     document.addEventListener('room-merge', (e) => onRoomMerge(e.detail.parentId, e.detail.childId));
+
+    // סגירת מודל פיצול בלחיצה על הרקע
+    const splitModal = document.getElementById('split-modal');
+    if (splitModal) {
+        splitModal.onclick = (e) => { if (e.target === splitModal) closeSplitModal(); };
+        const splitContent = splitModal.querySelector('.split-modal-content');
+        if (splitContent) splitContent.onclick = (e) => e.stopPropagation();
+    }
 
     // Default start
     camera.reset();
@@ -306,7 +325,8 @@ function getPlanState() {
         heightPx: parseFloat(r.style.height) / z,
         rotationDeg: parseFloat(r.dataset.rotation || 0),
         color: r.style.backgroundColor,
-        customHeight: r.dataset.customHeight ? parseFloat(r.dataset.customHeight) : undefined
+        customHeight: r.dataset.customHeight ? parseFloat(r.dataset.customHeight) : undefined,
+        shape: r.dataset.shape || 'rect'
     }));
 }
 
@@ -512,8 +532,14 @@ function createRoom(roomObj) {
 function updateRoomSize(id, wM, hM, anchor = 'tl') {
     const room = document.getElementById(id);
     if (!room) return;
-    const area = parseFloat(room.dataset.area);
-    if (anchor === 'r' || anchor === 'l') hM = area / wM; else wM = area / hM;
+    const isEllipse = room.dataset.shape === 'ellipse';
+    let area = parseFloat(room.dataset.area);
+    if (!isEllipse) {
+        if (anchor === 'r' || anchor === 'l') hM = area / wM; else wM = area / hM;
+    } else {
+        area = (Math.PI * wM * hM) / 4;
+        room.dataset.area = area.toFixed(1);
+    }
     const z = camera ? camera.zoom : 1;
     room.style.width = (wM * SCALE * z) + 'px';
     room.style.height = (hM * SCALE * z) + 'px';
@@ -522,24 +548,84 @@ function updateRoomSize(id, wM, hM, anchor = 'tl') {
     room.querySelector('.room-info').innerText = area.toFixed(0) + ' m²';
 }
 
+function closeSplitModal() {
+    const modal = document.getElementById('split-modal');
+    if (modal) {
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+    }
+}
+
+function showSplitModal(room, totalArea, onConfirm) {
+    const modal = document.getElementById('split-modal');
+    const desc = document.getElementById('split-modal-desc');
+    const input = document.getElementById('split-area-input');
+    const cancelBtn = document.getElementById('split-modal-cancel');
+    const confirmBtn = document.getElementById('split-modal-confirm');
+    if (!modal || !input) return;
+
+    const roomName = (room.querySelector('.room-label') && room.querySelector('.room-label').innerText) || 'החדר';
+    desc.textContent = `כמה מ"ר לפצל מ"${roomName}" לטובת פונקציה חדשה? (סה״כ ${totalArea} מ"ר). השטח ייגרע מהפונקציה הנוכחית ויועבר לחדר חדש.`;
+    input.min = 0.1;
+    input.max = totalArea - 0.1;
+    input.step = 0.1;
+    input.value = (totalArea / 2).toFixed(1);
+
+    const doClose = () => {
+        closeSplitModal();
+        cancelBtn.onclick = null;
+        confirmBtn.onclick = null;
+        input.onkeydown = null;
+    };
+
+    cancelBtn.onclick = () => doClose();
+
+    confirmBtn.onclick = () => {
+        const splitArea = parseFloat(input.value);
+        if (!Number.isFinite(splitArea) || splitArea <= 0 || splitArea >= totalArea) {
+            input.reportValidity();
+            return;
+        }
+        doClose();
+        onConfirm(splitArea);
+    };
+
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter') confirmBtn.click();
+        if (e.key === 'Escape') cancelBtn.click();
+    };
+
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+    input.focus();
+    input.select();
+}
+
 function splitRoom(id) {
     const room = document.getElementById(id);
+    if (!room || !room.dataset.area) return;
     const totalArea = parseFloat(room.dataset.area);
-    const splitVal = prompt(`הכנס שטח לפיצול (מתוך ${totalArea} מ"ר):`, totalArea / 2);
-    if (splitVal && !isNaN(splitVal) && parseFloat(splitVal) < totalArea) {
-        room.dataset.area = (totalArea - parseFloat(splitVal)).toFixed(1);
-        updateRoomSize(id, Math.sqrt(room.dataset.area), Math.sqrt(room.dataset.area));
+    if (totalArea <= 0.1) return;
+
+    showSplitModal(room, totalArea, (splitArea) => {
+        const remainingArea = totalArea - splitArea;
+        room.dataset.area = remainingArea.toFixed(1);
+        const sideM = Math.sqrt(remainingArea);
+        updateRoomSize(id, sideM, sideM);
         const z = camera ? camera.zoom : 1;
+        const sidePx = SCALE * Math.sqrt(splitArea);
         createRoom({
             name: `${room.querySelector('.room-label').innerText} (פוצל)`,
-            area: parseFloat(splitVal),
+            area: splitArea,
             floorId: room.dataset.floor,
             color: room.style.backgroundColor,
             leftPx: (parseFloat(room.style.left) / z) - WORKSPACE_OFFSET + 20,
-            topPx: (parseFloat(room.style.top) / z) - WORKSPACE_OFFSET + 20
+            topPx: (parseFloat(room.style.top) / z) - WORKSPACE_OFFSET + 20,
+            widthPx: sidePx,
+            heightPx: sidePx
         });
         syncInventory();
-    }
+    });
 }
 
 function updateHeightInputs() {
@@ -571,10 +657,13 @@ function updateFloorSelect() {
 function getRoomAreaM2(roomEl) {
     let area = parseFloat(roomEl.dataset.area);
     if (!Number.isFinite(area) || area <= 0) {
-        const wPx = parseFloat(roomEl.style.width);
-        const hPx = parseFloat(roomEl.style.height);
+        const z = camera ? camera.zoom : 1;
+        const wPx = parseFloat(roomEl.style.width) / z;
+        const hPx = parseFloat(roomEl.style.height) / z;
         if (Number.isFinite(wPx) && Number.isFinite(hPx) && wPx > 0 && hPx > 0) {
-            area = (wPx / SCALE) * (hPx / SCALE);
+            const wM = wPx / SCALE;
+            const hM = hPx / SCALE;
+            area = roomEl.dataset.shape === 'ellipse' ? (Math.PI * wM * hM) / 4 : wM * hM;
             roomEl.dataset.area = area.toFixed(1);
         } else {
             area = 0;
@@ -882,6 +971,8 @@ function addNewRoomUI() {
     const n = (document.getElementById('newName').value || '').trim();
     const a = parseFloat(document.getElementById('newArea').value);
     const f = document.getElementById('newFloorSelect').value;
+    const shapeBtn = document.getElementById('shape-toggle-btn');
+    const shape = (shapeBtn && shapeBtn.dataset.shape === 'ellipse') ? 'ellipse' : 'rect';
     if (!n) {
         alert('הזן שם לחדר.');
         return;
@@ -892,7 +983,7 @@ function addNewRoomUI() {
     }
     if (!f) return;
     const { x, y } = camera.screenToLogical(window.innerWidth / 2, window.innerHeight / 2);
-    createRoom({ name: n, area: a, floorId: f, leftPx: x, topPx: y });
+    createRoom({ name: n, area: a, floorId: f, leftPx: x, topPx: y, shape });
 }
 
 function deleteRoom(id) {

@@ -9,15 +9,31 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
 
     const lx = r.leftPx ?? parseFloat(r.left) ?? 0;
     const ly = r.topPx ?? parseFloat(r.top) ?? 0;
-    const wPx = parseFloat(r.widthPx || r.width || 100);
-    const hPx = parseFloat(r.heightPx || r.height || 100);
+    const isEllipse = r.shape === 'ellipse';
+    let wPx = parseFloat(r.widthPx || r.width);
+    let hPx = parseFloat(r.heightPx || r.height);
+    if (!Number.isFinite(wPx) || !Number.isFinite(hPx) || wPx <= 0 || hPx <= 0) {
+        const areaM2 = r.area != null && Number.isFinite(parseFloat(r.area)) ? parseFloat(r.area) : 25;
+        const areaPx = areaM2 * SCALE * SCALE;
+        if (isEllipse) {
+            const sidePx = 2 * Math.sqrt(areaPx / Math.PI);
+            wPx = hPx = sidePx;
+        } else {
+            const sidePx = Math.sqrt(areaPx);
+            wPx = hPx = sidePx;
+        }
+    }
     const wM = wPx / SCALE;
     const hM = hPx / SCALE;
-    const area = r.area != null ? parseFloat(r.area) : (wPx * hPx) / (SCALE * SCALE);
+    const area = r.area != null ? parseFloat(r.area)
+        : isEllipse ? (Math.PI * wPx * hPx) / (4 * SCALE * SCALE)
+        : (wPx * hPx) / (SCALE * SCALE);
 
     room.dataset.area = area.toFixed(1);
     room.dataset.floor = r.floorId || r.floor;
     room.dataset.rotation = (r.rotationDeg ?? r.rotation ?? 0).toString();
+    room.dataset.shape = isEllipse ? 'ellipse' : 'rect';
+    if (isEllipse) room.classList.add('room--ellipse');
     room.style.backgroundColor = r.color || "#ffffff";
     if (r.customHeight != null && r.customHeight !== '' && Number.isFinite(parseFloat(r.customHeight))) {
         room.dataset.customHeight = String(parseFloat(r.customHeight));
@@ -54,8 +70,17 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
     const floorContainer = document.getElementById(room.dataset.floor);
     if (floorContainer) floorContainer.appendChild(room);
 
-    room.querySelector('.btn-del').onclick = () => onDelete(room.id);
-    room.querySelector('.btn-split').onclick = () => onSplit(room.id);
+    if (isEllipse) {
+        const splitBtn = room.querySelector('.btn-split');
+        if (splitBtn) splitBtn.style.display = 'none';
+    }
+
+    const delBtn = room.querySelector('.btn-del');
+    delBtn.onclick = (e) => { e.stopPropagation(); e.preventDefault(); onDelete(room.id); };
+    delBtn.onmousedown = (e) => e.stopPropagation();
+    const splitBtn = room.querySelector('.btn-split');
+    splitBtn.onclick = (e) => { e.stopPropagation(); e.preventDefault(); onSplit(room.id); };
+    splitBtn.onmousedown = (e) => { e.stopPropagation(); };
     room.querySelector('.btn-rot').onmousedown = (e) => startRotate(e, room.id, camera);
 
     const mergeBtn = room.querySelector('.btn-merge');
