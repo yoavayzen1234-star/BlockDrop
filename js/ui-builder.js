@@ -1,4 +1,4 @@
-import { SCALE, WORKSPACE_OFFSET, escapeHtml } from './config.js';
+import { SCALE, WORKSPACE_OFFSET, roundLogical, escapeHtml } from './config.js';
 import { state } from './state.js';
 import { makeDraggable, setupResizing, startRotate } from './editor2d.js';
 
@@ -16,11 +16,11 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
         const areaM2 = r.area != null && Number.isFinite(parseFloat(r.area)) ? parseFloat(r.area) : 25;
         const areaPx = areaM2 * SCALE * SCALE;
         if (isEllipse) {
-            const sidePx = 2 * Math.sqrt(areaPx / Math.PI);
-            wPx = hPx = sidePx;
+            const diameterPx = 2 * Math.sqrt(areaPx / Math.PI);
+            wPx = hPx = roundLogical(diameterPx);
         } else {
             const sidePx = Math.sqrt(areaPx);
-            wPx = hPx = sidePx;
+            wPx = hPx = roundLogical(sidePx);
         }
     }
     const wM = wPx / SCALE;
@@ -33,6 +33,11 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
     room.dataset.floor = r.floorId || r.floor;
     room.dataset.rotation = (r.rotationDeg ?? r.rotation ?? 0).toString();
     room.dataset.shape = isEllipse ? 'ellipse' : 'rect';
+    // Single source of truth for logical size/position so all floors and 3D stay consistent (same precision as plan3d)
+    room.dataset.logicalLeftPx = String(roundLogical(lx));
+    room.dataset.logicalTopPx = String(roundLogical(ly));
+    room.dataset.logicalWidthPx = String(roundLogical(wPx));
+    room.dataset.logicalHeightPx = String(roundLogical(hPx));
     if (isEllipse) room.classList.add('room--ellipse');
     room.style.backgroundColor = r.color || "#ffffff";
     if (r.customHeight != null && r.customHeight !== '' && Number.isFinite(parseFloat(r.customHeight))) {

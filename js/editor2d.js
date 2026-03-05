@@ -1,4 +1,4 @@
-import { SCALE, SNAP_THRESHOLD, WORKSPACE_OFFSET } from './config.js';
+import { SCALE, SNAP_THRESHOLD, WORKSPACE_OFFSET, roundLogical } from './config.js';
 import { getRoomCorners } from './geometry.js';
 import { state } from './state.js';
 import { SnapEngine } from './snapEngine.js';
@@ -59,12 +59,17 @@ export function makeDraggable(el, camera, updateCallback) {
         const applyDrag = () => {
             dragRafId = 0;
             if (!lastMove) return;
-            const { clientX, clientY } = lastMove;
+            const { clientX, clientY, altKey } = lastMove;
             lastMove = null;
 
             const currentMouse = camera.screenToLogical(clientX, clientY);
-            const dx = currentMouse.x - startMouse.x;
-            const dy = currentMouse.y - startMouse.y;
+            let dx = currentMouse.x - startMouse.x;
+            let dy = currentMouse.y - startMouse.y;
+            const precisionDrag = altKey;
+            if (precisionDrag) {
+                dx *= 0.1;
+                dy *= 0.1;
+            }
 
             let finalSnapX = null, finalSnapY = null;
             const leader = startPositions.find(p => p.el === el);
@@ -96,6 +101,8 @@ export function makeDraggable(el, camera, updateCallback) {
             const gv = snapResult.guides.v || [];
             const gh = snapResult.guides.h || [];
             const toDisplayPx = (logical) => Math.round((WORKSPACE_OFFSET + logical) * z);
+            const toDisplayX = (logicalX) => (WORKSPACE_OFFSET + logicalX) * z;
+            const toDisplayY = (logicalY) => (WORKSPACE_OFFSET + logicalY) * z;
             vGuides.forEach((vg, i) => {
                 if (gv[i] != null) {
                     vg.style.display = 'block';
@@ -113,8 +120,6 @@ export function makeDraggable(el, camera, updateCallback) {
                 }
             });
 
-            const toDisplayX = (logicalX) => Math.round((WORKSPACE_OFFSET + logicalX) * z);
-            const toDisplayY = (logicalY) => Math.round((WORKSPACE_OFFSET + logicalY) * z);
             startPositions.forEach(pos => {
                 let finalX = pos.left + dx, finalY = pos.top + dy;
                 if (finalSnapX !== null && pos.el === el) {
@@ -132,6 +137,15 @@ export function makeDraggable(el, camera, updateCallback) {
                 } else if (pos.el === el) {
                     pos.el.style.top = toDisplayY(finalY) + 'px';
                 }
+
+                const diffX = finalSnapX !== null ? finalSnapX - leadNewL : 0;
+                const diffY = finalSnapY !== null ? finalSnapY - leadNewT : 0;
+                const logicalLeft = pos.left + dx + diffX;
+                const logicalTop = pos.top + dy + diffY;
+                const finalLogicalX = roundLogical((pos.el === el && finalSnapX !== null) ? finalSnapX : logicalLeft);
+                const finalLogicalY = roundLogical((pos.el === el && finalSnapY !== null) ? finalSnapY : logicalTop);
+                pos.el.dataset.logicalLeftPx = String(finalLogicalX);
+                pos.el.dataset.logicalTopPx = String(finalLogicalY);
             });
 
             const dRect = {
@@ -167,7 +181,7 @@ export function makeDraggable(el, camera, updateCallback) {
         };
 
         document.onmousemove = (me) => {
-            lastMove = { clientX: me.clientX, clientY: me.clientY };
+            lastMove = { clientX: me.clientX, clientY: me.clientY, altKey: me.altKey };
             if (dragRafId === 0) dragRafId = requestAnimationFrame(applyDrag);
         };
 
@@ -296,9 +310,11 @@ export function setupResizing(room, camera, updateRoomSizeFn, onComplete) {
                     updateRoomSizeFn(room.id, null, Math.max(1, snapped.height / (SCALE * curZoom)), 'b');
                 } else if (moveSide === 'l') {
                     room.style.left = Math.round(snapped.left) + 'px';
+                    room.dataset.logicalLeftPx = String(roundLogical((snapped.left / curZoom) - WORKSPACE_OFFSET));
                     updateRoomSizeFn(room.id, Math.max(1, snapped.width / (SCALE * curZoom)), null, 'l');
                 } else if (moveSide === 't') {
                     room.style.top = Math.round(snapped.top) + 'px';
+                    room.dataset.logicalTopPx = String(roundLogical((snapped.top / curZoom) - WORKSPACE_OFFSET));
                     updateRoomSizeFn(room.id, null, Math.max(1, snapped.height / (SCALE * curZoom)), 't');
                 }
                 updateResizeGuides();

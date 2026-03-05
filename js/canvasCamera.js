@@ -112,8 +112,9 @@ export class CanvasCamera {
             /* No scale() — zoom applied via --zoom + room/floor dimensions so text stays crisp */
             this.wrapper.style.transform = `translate(${this.panX}px, ${this.panY}px)`;
             this.wrapper.style.setProperty('--zoom', String(this.zoom));
-            if (this._prevZoom !== this.zoom && this.onZoomChange) {
-                this.onZoomChange(this._prevZoom, this.zoom);
+            const zoomChanged = this._prevZoom !== this.zoom;
+            if (zoomChanged) {
+                if (this.onZoomChange) this.onZoomChange(this._prevZoom, this.zoom);
                 this._prevZoom = this.zoom;
             }
             const zoomLabel = document.getElementById('zoom-level');

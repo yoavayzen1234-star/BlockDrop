@@ -122,4 +122,28 @@ export class SelectionManager {
         state.selectedRooms.forEach(r => r.classList.remove('selected'));
         state.selectedRooms = [];
     }
+
+    /**
+     * Get the room element at logical coordinates (center-origin: 0,0 = canvas center).
+     * Only checks rooms on the active floor.
+     * @param {number} logicalX - logical x (center-origin)
+     * @param {number} logicalY - logical y (center-origin)
+     * @returns {HTMLElement|null} room element or null
+     */
+    getRoomAt(logicalX, logicalY) {
+        const plan = document.getElementById(state.activeFloorId);
+        if (!plan) return null;
+        const z = this.camera.zoom;
+        const rooms = plan.querySelectorAll('.room');
+        for (const room of rooms) {
+            const left = (parseFloat(room.style.left) / z) - WORKSPACE_OFFSET;
+            const top = (parseFloat(room.style.top) / z) - WORKSPACE_OFFSET;
+            const width = parseFloat(room.style.width) / z;
+            const height = parseFloat(room.style.height) / z;
+            if (logicalX >= left && logicalX <= left + width && logicalY >= top && logicalY <= top + height) {
+                return room;
+            }
+        }
+        return null;
+    }
 }

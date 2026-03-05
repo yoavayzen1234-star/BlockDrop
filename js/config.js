@@ -1,6 +1,11 @@
 export const SCALE = 12;
 export const SNAP_THRESHOLD = 8;
 export const WORKSPACE_SIZE = 50000;
+/** Round logical coords to this precision so 2D, 3D and save/load stay in sync. */
+export const LOGICAL_PRECISION = 1e6;
+export function roundLogical(v) {
+    return Number.isFinite(v) ? Math.round(Number(v) * LOGICAL_PRECISION) / LOGICAL_PRECISION : v;
+}
 /** Global origin: center of infinite canvas. Logical (0,0) = CSS (WORKSPACE_OFFSET, WORKSPACE_OFFSET) = [25000, 25000]. */
 export const WORKSPACE_OFFSET = WORKSPACE_SIZE / 2;
 export const GLOBAL_ORIGIN = [WORKSPACE_OFFSET, WORKSPACE_OFFSET];

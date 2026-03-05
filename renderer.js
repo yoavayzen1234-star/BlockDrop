@@ -1,10 +1,9 @@
-import { SCALE, WORKSPACE_OFFSET } from './js/config.js';
+import { SCALE, WORKSPACE_OFFSET, roundLogical } from './js/config.js';
 import { state } from './js/state.js';
 import { createRoomElement, buildFloorTab, buildFloorPlan } from './js/ui-builder.js';
 import { Plan3DEngine } from './js/plan3d.engine.js';
 import { CanvasCamera } from './js/canvasCamera.js';
 import { SelectionManager } from './js/selectionManager.js';
-
 const APP_NAME = 'SurferPlan Desktop';
 const APP_VERSION = '1.2.0';
 
@@ -35,6 +34,18 @@ window.onkeydown = (e) => {
     if (e.ctrlKey && e.key === 'z') {
         e.preventDefault();
         undo();
+    }
+    const tag = e.target && e.target.tagName && e.target.tagName.toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (state.selectedRooms.length === 0 || !camera) return;
+    let dx = 0, dy = 0;
+    if (e.key === 'ArrowLeft') dx = -1;
+    else if (e.key === 'ArrowRight') dx = 1;
+    else if (e.key === 'ArrowUp') dy = -1;
+    else if (e.key === 'ArrowDown') dy = 1;
+    if (dx !== 0 || dy !== 0) {
+        e.preventDefault();
+        nudgeSelectedRoomsByOnePixel(dx, dy);
     }
 };
 window.onkeyup = (e) => {
@@ -75,7 +86,6 @@ function initApp() {
     document.getElementById('reset-view').onclick = () => camera.centerView();
     document.getElementById('add-floor-btn').onclick = addNewFloor;
 
-    // Listen for room-merge events from editor2d.js
     document.addEventListener('room-merge', (e) => onRoomMerge(e.detail.parentId, e.detail.childId));
 
     // סגירת מודל פיצול בלחיצה על הרקע
@@ -100,6 +110,29 @@ function initApp() {
     currentProjectData = getCurrentProjectData();
     activeAltIndex = 0;
     renderAltTabs();
+}
+
+/** Nudge selected rooms by 1 display pixel (zoom-dependent: finer when zoomed in). */
+function nudgeSelectedRoomsByOnePixel(dxPx, dyPx) {
+    if (!camera || state.selectedRooms.length === 0) return;
+    const z = camera.zoom;
+    const dxLogical = dxPx / z;
+    const dyLogical = dyPx / z;
+    state.selectedRooms.forEach(room => {
+        const logicalLeft = Number.isFinite(parseFloat(room.dataset.logicalLeftPx))
+            ? parseFloat(room.dataset.logicalLeftPx)
+            : (parseFloat(room.style.left) / z) - WORKSPACE_OFFSET;
+        const logicalTop = Number.isFinite(parseFloat(room.dataset.logicalTopPx))
+            ? parseFloat(room.dataset.logicalTopPx)
+            : (parseFloat(room.style.top) / z) - WORKSPACE_OFFSET;
+        const newLeft = roundLogical(logicalLeft + dxLogical);
+        const newTop = roundLogical(logicalTop + dyLogical);
+        room.dataset.logicalLeftPx = String(newLeft);
+        room.dataset.logicalTopPx = String(newTop);
+        room.style.left = ((WORKSPACE_OFFSET + newLeft) * z) + 'px';
+        room.style.top = ((WORKSPACE_OFFSET + newTop) * z) + 'px';
+    });
+    refreshUnderlays();
 }
 
 function toggleSidebar() {
@@ -328,38 +361,70 @@ function renderAltTabs() {
     bar.appendChild(addBtn);
 }
 
-/** When zoom changes, redraw room positions/sizes in display pixels so text stays crisp (no scale blur). */
+/** When zoom changes, redraw room positions/sizes in display pixels so text stays crisp (no scale blur). Uses stored logical dimensions so all floors stay consistent. */
 function refreshRoomsForZoom(oldZoom, newZoom) {
+    const minSizePx = Math.max(1, Math.round(4 * newZoom)); // minimum room size in display px so they don't vanish when zoomed
     document.querySelectorAll('.room').forEach(room => {
-        const logicalLeft = (parseFloat(room.style.left) / oldZoom) - WORKSPACE_OFFSET;
-        const logicalTop = (parseFloat(room.style.top) / oldZoom) - WORKSPACE_OFFSET;
-        const logicalW = parseFloat(room.style.width) / oldZoom;
-        const logicalH = parseFloat(room.style.height) / oldZoom;
+        let logicalLeft = parseFloat(room.dataset.logicalLeftPx);
+        let logicalTop = parseFloat(room.dataset.logicalTopPx);
+        let logicalW = parseFloat(room.dataset.logicalWidthPx);
+        let logicalH = parseFloat(room.dataset.logicalHeightPx);
+        if (!Number.isFinite(logicalLeft)) {
+            logicalLeft = roundLogical((parseFloat(room.style.left) / oldZoom) - WORKSPACE_OFFSET);
+            room.dataset.logicalLeftPx = String(logicalLeft);
+        }
+        if (!Number.isFinite(logicalTop)) {
+            logicalTop = roundLogical((parseFloat(room.style.top) / oldZoom) - WORKSPACE_OFFSET);
+            room.dataset.logicalTopPx = String(logicalTop);
+        }
+        if (!Number.isFinite(logicalW)) {
+            logicalW = roundLogical(parseFloat(room.style.width) / oldZoom);
+            room.dataset.logicalWidthPx = String(logicalW);
+        }
+        if (!Number.isFinite(logicalH)) {
+            logicalH = roundLogical(parseFloat(room.style.height) / oldZoom);
+            room.dataset.logicalHeightPx = String(logicalH);
+        }
+        const wPx = Math.round(logicalW * newZoom);
+        const hPx = Math.round(logicalH * newZoom);
         room.style.left = Math.round((WORKSPACE_OFFSET + logicalLeft) * newZoom) + 'px';
         room.style.top = Math.round((WORKSPACE_OFFSET + logicalTop) * newZoom) + 'px';
-        room.style.width = Math.round(logicalW * newZoom) + 'px';
-        room.style.height = Math.round(logicalH * newZoom) + 'px';
+        room.style.width = Math.max(minSizePx, wPx) + 'px';
+        room.style.height = Math.max(minSizePx, hPx) + 'px';
     });
     refreshUnderlays();
 }
 
-/** Returns room state in 2D logical coordinates (same origin as config) for 3D alignment. Rounded so 2D and 3D match exactly. */
+/** Returns room state in 2D logical coordinates (same origin as config) for 3D alignment. Uses stored logical dimensions; same precision as 3D so floors and 3D stay in sync. */
 function getPlanState() {
     const z = camera ? camera.zoom : 1;
-    const round2 = (v) => Math.round(v * 100) / 100;
-    return Array.from(document.querySelectorAll('.room')).map(r => ({
-        id: r.id,
-        name: r.querySelector('.room-label').innerText,
-        floorId: r.dataset.floor,
-        leftPx: round2((parseFloat(r.style.left) / z) - WORKSPACE_OFFSET),
-        topPx: round2((parseFloat(r.style.top) / z) - WORKSPACE_OFFSET),
-        widthPx: round2(parseFloat(r.style.width) / z),
-        heightPx: round2(parseFloat(r.style.height) / z),
-        rotationDeg: parseFloat(r.dataset.rotation || 0),
-        color: r.style.backgroundColor,
-        customHeight: r.dataset.customHeight ? parseFloat(r.dataset.customHeight) : undefined,
-        shape: r.dataset.shape || 'rect'
-    }));
+    return Array.from(document.querySelectorAll('.room')).map(r => {
+        const leftPx = Number.isFinite(parseFloat(r.dataset.logicalLeftPx))
+            ? parseFloat(r.dataset.logicalLeftPx)
+            : (parseFloat(r.style.left) / z) - WORKSPACE_OFFSET;
+        const topPx = Number.isFinite(parseFloat(r.dataset.logicalTopPx))
+            ? parseFloat(r.dataset.logicalTopPx)
+            : (parseFloat(r.style.top) / z) - WORKSPACE_OFFSET;
+        const widthPx = Number.isFinite(parseFloat(r.dataset.logicalWidthPx))
+            ? parseFloat(r.dataset.logicalWidthPx)
+            : parseFloat(r.style.width) / z;
+        const heightPx = Number.isFinite(parseFloat(r.dataset.logicalHeightPx))
+            ? parseFloat(r.dataset.logicalHeightPx)
+            : parseFloat(r.style.height) / z;
+        return {
+            id: r.id,
+            name: r.querySelector('.room-label').innerText,
+            floorId: r.dataset.floor,
+            leftPx: roundLogical(leftPx),
+            topPx: roundLogical(topPx),
+            widthPx: roundLogical(widthPx),
+            heightPx: roundLogical(heightPx),
+            rotationDeg: parseFloat(r.dataset.rotation || 0),
+            color: r.style.backgroundColor,
+            customHeight: r.dataset.customHeight ? parseFloat(r.dataset.customHeight) : undefined,
+            shape: r.dataset.shape || 'rect'
+        };
+    });
 }
 
 function init3D() {
@@ -532,6 +597,7 @@ function refreshUnderlays() {
     currentPlan.querySelectorAll('.room-ghost').forEach(g => g.remove());
     const currentIdx = state.getFloorIndex(state.activeFloorId);
     if (currentIdx === 0) return;
+    const z = camera ? camera.zoom : 1;
     const allRooms = document.querySelectorAll('.room');
     const lowerFloorIds = new Set(state.floors.slice(0, currentIdx).map(f => f.id));
     const floorNames = Object.fromEntries(state.floors.slice(0, currentIdx).map(f => [f.id, f.name]));
@@ -539,13 +605,19 @@ function refreshUnderlays() {
     allRooms.forEach(r => {
         const fid = r.dataset.floor;
         if (!lowerFloorIds.has(fid)) return;
+        const lw = parseFloat(r.dataset.logicalWidthPx);
+        const lh = parseFloat(r.dataset.logicalHeightPx);
+        const ll = parseFloat(r.dataset.logicalLeftPx);
+        const lt = parseFloat(r.dataset.logicalTopPx);
+        if (!Number.isFinite(lw) || !Number.isFinite(lh) || !Number.isFinite(ll) || !Number.isFinite(lt)) return;
         const ghost = document.createElement('div');
         ghost.className = 'room-ghost';
-        ghost.style.width = r.style.width;
-        ghost.style.height = r.style.height;
-        ghost.style.left = r.style.left;
-        ghost.style.top = r.style.top;
-        ghost.style.transform = r.style.transform;
+        if (r.dataset.shape === 'ellipse') ghost.classList.add('room--ellipse');
+        ghost.style.width = Math.round(lw * z) + 'px';
+        ghost.style.height = Math.round(lh * z) + 'px';
+        ghost.style.left = Math.round((WORKSPACE_OFFSET + ll) * z) + 'px';
+        ghost.style.top = Math.round((WORKSPACE_OFFSET + lt) * z) + 'px';
+        ghost.style.transform = r.style.transform || '';
         ghost.innerText = `נעול (${floorNames[fid]})`;
         fragment.appendChild(ghost);
     });
@@ -579,8 +651,12 @@ function updateRoomSize(id, wM, hM, anchor = 'tl') {
         room.dataset.area = area.toFixed(1);
     }
     const z = camera ? camera.zoom : 1;
-    room.style.width = (wM * SCALE * z) + 'px';
-    room.style.height = (hM * SCALE * z) + 'px';
+    const logicalW = roundLogical(wM * SCALE);
+    const logicalH = roundLogical(hM * SCALE);
+    room.dataset.logicalWidthPx = String(logicalW);
+    room.dataset.logicalHeightPx = String(logicalH);
+    room.style.width = (logicalW * z) + 'px';
+    room.style.height = (logicalH * z) + 'px';
     room.querySelector('.dim-w').innerText = wM.toFixed(1) + ' m';
     room.querySelector('.dim-l').innerText = hM.toFixed(1) + ' m';
     room.querySelector('.room-info').innerText = area.toFixed(0) + ' m²';
@@ -654,13 +730,15 @@ function splitRoom(id) {
         updateRoomSize(id, sideM, sideM);
         const z = camera ? camera.zoom : 1;
         const sidePx = SCALE * Math.sqrt(splitArea);
+        const baseLeft = Number.isFinite(parseFloat(room.dataset.logicalLeftPx)) ? parseFloat(room.dataset.logicalLeftPx) : (parseFloat(room.style.left) / z) - WORKSPACE_OFFSET;
+        const baseTop = Number.isFinite(parseFloat(room.dataset.logicalTopPx)) ? parseFloat(room.dataset.logicalTopPx) : (parseFloat(room.style.top) / z) - WORKSPACE_OFFSET;
         createRoom({
             name: `${room.querySelector('.room-label').innerText} (פוצל)`,
             area: splitArea,
             floorId: room.dataset.floor,
             color: room.style.backgroundColor,
-            leftPx: (parseFloat(room.style.left) / z) - WORKSPACE_OFFSET + 20,
-            topPx: (parseFloat(room.style.top) / z) - WORKSPACE_OFFSET + 20,
+            leftPx: baseLeft + 20,
+            topPx: baseTop + 20,
             widthPx: sidePx,
             heightPx: sidePx
         });
@@ -693,13 +771,12 @@ function updateFloorSelect() {
     if (state.activeFloorId) select.value = state.activeFloorId;
 }
 
-/** Get room area in m² from dataset or from current dimensions (fallback). */
+/** Get room area in m² from dataset or from stored logical dimensions (fallback). */
 function getRoomAreaM2(roomEl) {
     let area = parseFloat(roomEl.dataset.area);
     if (!Number.isFinite(area) || area <= 0) {
-        const z = camera ? camera.zoom : 1;
-        const wPx = parseFloat(roomEl.style.width) / z;
-        const hPx = parseFloat(roomEl.style.height) / z;
+        const wPx = parseFloat(roomEl.dataset.logicalWidthPx) || (camera ? parseFloat(roomEl.style.width) / camera.zoom : parseFloat(roomEl.style.width));
+        const hPx = parseFloat(roomEl.dataset.logicalHeightPx) || (camera ? parseFloat(roomEl.style.height) / camera.zoom : parseFloat(roomEl.style.height));
         if (Number.isFinite(wPx) && Number.isFinite(hPx) && wPx > 0 && hPx > 0) {
             const wM = wPx / SCALE;
             const hM = hPx / SCALE;
@@ -997,8 +1074,8 @@ function unnestRoom(parentId, childId) {
     updateRoomSize(parentId, newW_meters, newH_meters);
 
     // Recreate child at global logical coords: parent logical + stored relative offset
-    const parentLogicalX = (parseFloat(parent.style.left) / z) - WORKSPACE_OFFSET;
-    const parentLogicalY = (parseFloat(parent.style.top) / z) - WORKSPACE_OFFSET;
+    const parentLogicalX = Number.isFinite(parseFloat(parent.dataset.logicalLeftPx)) ? parseFloat(parent.dataset.logicalLeftPx) : (parseFloat(parent.style.left) / z) - WORKSPACE_OFFSET;
+    const parentLogicalY = Number.isFinite(parseFloat(parent.dataset.logicalTopPx)) ? parseFloat(parent.dataset.logicalTopPx) : (parseFloat(parent.style.top) / z) - WORKSPACE_OFFSET;
     createRoom({
         id: childData.id,
         name: childData.name,
