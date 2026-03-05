@@ -32,12 +32,17 @@ export class SnapEngine {
         const threshold = SNAP_THRESHOLD / zoom;
         const addV = (x) => { if (guideV.indexOf(x) === -1) guideV.push(x); };
         const addH = (y) => { if (guideH.indexOf(y) === -1) guideH.push(y); };
+        /** Round logical coords so (WORKSPACE_OFFSET + val) * zoom gives stable pixels */
+        const roundLogical = (v) => Math.round(v * 1e4) / 1e4;
 
         // Bypass snapping when Alt is held
         if (!window.isAltPressed) {
             snappedX = this.snapToGrid(pos.x);
             snappedY = this.snapToGrid(pos.y);
 
+            // Collect all candidate edges within threshold; snap to the closest for pixel-perfect alignment
+            let bestX = { dist: threshold, val: snappedX, lineVal: null };
+            let bestY = { dist: threshold, val: snappedY, lineVal: null };
             for (const other of otherRooms) {
                 const ox = other.left != null ? other.left : parseFloat(other.style?.left);
                 const oy = other.top != null ? other.top : parseFloat(other.style?.top);
@@ -45,37 +50,41 @@ export class SnapEngine {
                 const oh = other.height != null ? other.height : parseFloat(other.style?.height);
 
                 const leftDists = [
-                    { diff: ox - pos.x, val: ox },
-                    { diff: (ox + ow) - pos.x, val: ox + ow },
-                    { diff: ox - (pos.x + size.w), val: ox - size.w },
-                    { diff: (ox + ow) - (pos.x + size.w), val: ox + ow - size.w }
+                    { diff: ox - pos.x, val: ox, lineVal: ox },
+                    { diff: (ox + ow) - pos.x, val: ox + ow, lineVal: ox + ow },
+                    { diff: ox - (pos.x + size.w), val: ox - size.w, lineVal: ox },
+                    { diff: (ox + ow) - (pos.x + size.w), val: ox + ow - size.w, lineVal: ox + ow }
                 ];
                 for (const d of leftDists) {
-                    if (Math.abs(d.diff) < threshold) {
-                        snappedX = d.val;
-                        const lineX = (d.val === ox || d.val === ox + ow) ? d.val : d.val + size.w;
-                        addV(lineX);
-                        break;
+                    const ad = Math.abs(d.diff);
+                    if (ad < bestX.dist) {
+                        bestX = { dist: ad, val: d.val, lineVal: d.lineVal };
                     }
                 }
 
                 const topDists = [
-                    { diff: oy - pos.y, val: oy },
-                    { diff: (oy + oh) - pos.y, val: oy + oh },
-                    { diff: oy - (pos.y + size.h), val: oy - size.h },
-                    { diff: (oy + oh) - (pos.y + size.h), val: (oy + oh) - size.h }
+                    { diff: oy - pos.y, val: oy, lineVal: oy },
+                    { diff: (oy + oh) - pos.y, val: oy + oh, lineVal: oy + oh },
+                    { diff: oy - (pos.y + size.h), val: oy - size.h, lineVal: oy },
+                    { diff: (oy + oh) - (pos.y + size.h), val: (oy + oh) - size.h, lineVal: oy + oh }
                 ];
                 for (const d of topDists) {
-                    if (Math.abs(d.diff) < threshold) {
-                        snappedY = d.val;
-                        const lineY = (d.val === oy || d.val === oy + oh) ? d.val : d.val + size.h;
-                        addH(lineY);
-                        break;
+                    const ad = Math.abs(d.diff);
+                    if (ad < bestY.dist) {
+                        bestY = { dist: ad, val: d.val, lineVal: d.lineVal };
                     }
                 }
             }
+            if (bestX.dist < threshold) {
+                snappedX = roundLogical(bestX.val);
+                if (bestX.lineVal != null) addV(roundLogical(bestX.lineVal));
+            }
+            if (bestY.dist < threshold) {
+                snappedY = roundLogical(bestY.val);
+                if (bestY.lineVal != null) addH(roundLogical(bestY.lineVal));
+            }
 
-            // Collect all aligned edges for guide lines (all sides)
+            // Collect all aligned edges for guide lines (all sides) — rounded for laser accuracy
             const myLeft = snappedX;
             const myRight = snappedX + size.w;
             const myTop = snappedY;
@@ -85,10 +94,10 @@ export class SnapEngine {
                 const oy = other.top != null ? other.top : parseFloat(other.style?.top);
                 const ow = other.width != null ? other.width : parseFloat(other.style?.width);
                 const oh = other.height != null ? other.height : parseFloat(other.style?.height);
-                if (Math.abs(myLeft - ox) < threshold || Math.abs(myLeft - (ox + ow)) < threshold) addV(myLeft);
-                if (Math.abs(myRight - ox) < threshold || Math.abs(myRight - (ox + ow)) < threshold) addV(myRight);
-                if (Math.abs(myTop - oy) < threshold || Math.abs(myTop - (oy + oh)) < threshold) addH(myTop);
-                if (Math.abs(myBottom - oy) < threshold || Math.abs(myBottom - (oy + oh)) < threshold) addH(myBottom);
+                if (Math.abs(myLeft - ox) < threshold || Math.abs(myLeft - (ox + ow)) < threshold) addV(roundLogical(myLeft));
+                if (Math.abs(myRight - ox) < threshold || Math.abs(myRight - (ox + ow)) < threshold) addV(roundLogical(myRight));
+                if (Math.abs(myTop - oy) < threshold || Math.abs(myTop - (oy + oh)) < threshold) addH(roundLogical(myTop));
+                if (Math.abs(myBottom - oy) < threshold || Math.abs(myBottom - (oy + oh)) < threshold) addH(roundLogical(myBottom));
             }
         }
 
@@ -120,15 +129,16 @@ export class SnapEngine {
         const myTop = top;
         const myBottom = top + height;
 
+        const roundPx = (v) => Math.round(v);
         for (const other of otherRooms) {
             const ox = parseFloat(other.style.left);
             const oy = parseFloat(other.style.top);
             const ow = parseFloat(other.style.width);
             const oh = parseFloat(other.style.height);
-            if (Math.abs(myLeft - ox) < threshold || Math.abs(myLeft - (ox + ow)) < threshold) addV(myLeft);
-            if (Math.abs(myRight - ox) < threshold || Math.abs(myRight - (ox + ow)) < threshold) addV(myRight);
-            if (Math.abs(myTop - oy) < threshold || Math.abs(myTop - (oy + oh)) < threshold) addH(myTop);
-            if (Math.abs(myBottom - oy) < threshold || Math.abs(myBottom - (oy + oh)) < threshold) addH(myBottom);
+            if (Math.abs(myLeft - ox) < threshold || Math.abs(myLeft - (ox + ow)) < threshold) addV(roundPx(myLeft));
+            if (Math.abs(myRight - ox) < threshold || Math.abs(myRight - (ox + ow)) < threshold) addV(roundPx(myRight));
+            if (Math.abs(myTop - oy) < threshold || Math.abs(myTop - (oy + oh)) < threshold) addH(roundPx(myTop));
+            if (Math.abs(myBottom - oy) < threshold || Math.abs(myBottom - (oy + oh)) < threshold) addH(roundPx(myBottom));
         }
         return { v: guideV, h: guideH };
     }
@@ -172,25 +182,26 @@ export class SnapEngine {
             return best;
         };
 
+        const roundPx = (v) => Math.round(v);
         if (side === 'r') {
             const desiredRight = desiredLeft + desiredWidth;
             const snapped = findClosest(desiredRight, targetsV);
-            if (snapped != null) outW = Math.max(minPx, snapped - desiredLeft);
+            if (snapped != null) outW = Math.max(minPx, roundPx(snapped - desiredLeft));
         } else if (side === 'l') {
             const snapped = findClosest(desiredLeft, targetsV);
             if (snapped != null) {
-                outLeft = snapped;
-                outW = Math.max(minPx, (desiredLeft + desiredWidth) - snapped);
+                outLeft = roundPx(snapped);
+                outW = Math.max(minPx, roundPx((desiredLeft + desiredWidth) - snapped));
             }
         } else if (side === 'b') {
             const desiredBottom = desiredTop + desiredHeight;
             const snapped = findClosest(desiredBottom, targetsH);
-            if (snapped != null) outH = Math.max(minPx, snapped - desiredTop);
+            if (snapped != null) outH = Math.max(minPx, roundPx(snapped - desiredTop));
         } else if (side === 't') {
             const snapped = findClosest(desiredTop, targetsH);
             if (snapped != null) {
-                outTop = snapped;
-                outH = Math.max(minPx, (desiredTop + desiredHeight) - snapped);
+                outTop = roundPx(snapped);
+                outH = Math.max(minPx, roundPx((desiredTop + desiredHeight) - snapped));
             }
         }
 

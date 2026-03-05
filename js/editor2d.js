@@ -5,6 +5,20 @@ import { SnapEngine } from './snapEngine.js';
 
 const snapEngine = new SnapEngine();
 
+/** Returns room elements from all floors below the active floor (for snap/alignment with ground floor). */
+function getLowerFloorRooms() {
+    const currentIdx = state.getFloorIndex(state.activeFloorId);
+    if (currentIdx <= 0) return [];
+    const lowerFloors = state.floors.slice(0, currentIdx);
+    const rooms = [];
+    for (const floor of lowerFloors) {
+        const plan = document.getElementById(floor.id);
+        if (!plan) continue;
+        rooms.push(...Array.from(plan.querySelectorAll('.room')));
+    }
+    return rooms;
+}
+
 /**
  * Handle room dragging with camera/zoom awareness
  */
@@ -60,23 +74,32 @@ export function makeDraggable(el, camera, updateCallback) {
             const leadH = el.offsetHeight / z;
 
             const otherRooms = Array.from(plan.querySelectorAll('.room')).filter(r => !state.selectedRooms.includes(r));
+            const lowerRooms = getLowerFloorRooms();
             const otherRoomsLogical = otherRooms.map(r => ({
                 left: (parseFloat(r.style.left) / z) - WORKSPACE_OFFSET,
                 top: (parseFloat(r.style.top) / z) - WORKSPACE_OFFSET,
                 width: parseFloat(r.style.width) / z,
                 height: parseFloat(r.style.height) / z
             }));
-            const snapResult = snapEngine.snapRoom({ x: leadNewL, y: leadNewT }, { w: leadW, h: leadH }, otherRoomsLogical, camera.canvasZoom);
+            const lowerRoomsLogical = lowerRooms.map(r => ({
+                left: (parseFloat(r.style.left) / z) - WORKSPACE_OFFSET,
+                top: (parseFloat(r.style.top) / z) - WORKSPACE_OFFSET,
+                width: parseFloat(r.style.width) / z,
+                height: parseFloat(r.style.height) / z
+            }));
+            const allForSnap = [...otherRoomsLogical, ...lowerRoomsLogical];
+            const snapResult = snapEngine.snapRoom({ x: leadNewL, y: leadNewT }, { w: leadW, h: leadH }, allForSnap, camera.canvasZoom);
 
             finalSnapX = snapResult.x;
             finalSnapY = snapResult.y;
 
             const gv = snapResult.guides.v || [];
             const gh = snapResult.guides.h || [];
+            const toDisplayPx = (logical) => Math.round((WORKSPACE_OFFSET + logical) * z);
             vGuides.forEach((vg, i) => {
                 if (gv[i] != null) {
                     vg.style.display = 'block';
-                    vg.style.left = (WORKSPACE_OFFSET + gv[i]) * z + 'px';
+                    vg.style.left = toDisplayPx(gv[i]) + 'px';
                 } else {
                     vg.style.display = 'none';
                 }
@@ -84,14 +107,14 @@ export function makeDraggable(el, camera, updateCallback) {
             hGuides.forEach((hg, i) => {
                 if (gh[i] != null) {
                     hg.style.display = 'block';
-                    hg.style.top = (WORKSPACE_OFFSET + gh[i]) * z + 'px';
+                    hg.style.top = toDisplayPx(gh[i]) + 'px';
                 } else {
                     hg.style.display = 'none';
                 }
             });
 
-            const toDisplayX = (logicalX) => (WORKSPACE_OFFSET + logicalX) * z;
-            const toDisplayY = (logicalY) => (WORKSPACE_OFFSET + logicalY) * z;
+            const toDisplayX = (logicalX) => Math.round((WORKSPACE_OFFSET + logicalX) * z);
+            const toDisplayY = (logicalY) => Math.round((WORKSPACE_OFFSET + logicalY) * z);
             startPositions.forEach(pos => {
                 let finalX = pos.left + dx, finalY = pos.top + dy;
                 if (finalSnapX !== null && pos.el === el) {
@@ -152,6 +175,11 @@ export function makeDraggable(el, camera, updateCallback) {
             document.onmousemove = null;
             vGuides.forEach(vg => { vg.style.display = 'none'; });
             hGuides.forEach(hg => { hg.style.display = 'none'; });
+            if (state.selectedRooms.length) {
+                document.dispatchEvent(new CustomEvent('room-moved', {
+                    detail: { roomIds: state.selectedRooms.map(r => r.id) }
+                }));
+            }
             if (updateCallback) updateCallback();
         };
     };
@@ -162,7 +190,11 @@ export function setupResizing(room, camera, updateRoomSizeFn, onComplete) {
     const vGuides = plan.querySelectorAll('.v-guide');
     const hGuides = plan.querySelectorAll('.h-guide');
 
-    const getOtherRooms = () => Array.from(plan.querySelectorAll('.room')).filter(r => r !== room);
+    const getOtherRooms = () => {
+        const sameFloor = Array.from(plan.querySelectorAll('.room')).filter(r => r !== room);
+        const lower = getLowerFloorRooms();
+        return [...sameFloor, ...lower];
+    };
 
     /** Check if two segments on the same axis overlap (by more than 1px). */
     const edgesOverlap = (a0, a1, b0, b1) => Math.min(a1, b1) - Math.max(a0, b0) > 1;
@@ -214,10 +246,10 @@ export function setupResizing(room, camera, updateRoomSizeFn, onComplete) {
         const otherRooms = getOtherRooms();
         const { v: gv, h: gh } = snapEngine.getGuideLines(left, top, w, h, otherRooms, camera.canvasZoom);
         vGuides.forEach((vg, i) => {
-            if (gv[i] != null) { vg.style.display = 'block'; vg.style.left = gv[i] + 'px'; } else { vg.style.display = 'none'; }
+            if (gv[i] != null) { vg.style.display = 'block'; vg.style.left = Math.round(gv[i]) + 'px'; } else { vg.style.display = 'none'; }
         });
         hGuides.forEach((hg, i) => {
-            if (gh[i] != null) { hg.style.display = 'block'; hg.style.top = gh[i] + 'px'; } else { hg.style.display = 'none'; }
+            if (gh[i] != null) { hg.style.display = 'block'; hg.style.top = Math.round(gh[i]) + 'px'; } else { hg.style.display = 'none'; }
         });
     }
 
@@ -263,10 +295,10 @@ export function setupResizing(room, camera, updateRoomSizeFn, onComplete) {
                 } else if (moveSide === 'b') {
                     updateRoomSizeFn(room.id, null, Math.max(1, snapped.height / (SCALE * curZoom)), 'b');
                 } else if (moveSide === 'l') {
-                    room.style.left = snapped.left + 'px';
+                    room.style.left = Math.round(snapped.left) + 'px';
                     updateRoomSizeFn(room.id, Math.max(1, snapped.width / (SCALE * curZoom)), null, 'l');
                 } else if (moveSide === 't') {
-                    room.style.top = snapped.top + 'px';
+                    room.style.top = Math.round(snapped.top) + 'px';
                     updateRoomSizeFn(room.id, null, Math.max(1, snapped.height / (SCALE * curZoom)), 't');
                 }
                 updateResizeGuides();

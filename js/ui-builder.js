@@ -40,10 +40,10 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
     }
 
     const z = camera ? camera.zoom : 1;
-    room.style.left = (lx + WORKSPACE_OFFSET) * z + "px";
-    room.style.top = (ly + WORKSPACE_OFFSET) * z + "px";
-    room.style.width = wPx * z + "px";
-    room.style.height = hPx * z + "px";
+    room.style.left = Math.round((lx + WORKSPACE_OFFSET) * z) + "px";
+    room.style.top = Math.round((ly + WORKSPACE_OFFSET) * z) + "px";
+    room.style.width = Math.round(wPx * z) + "px";
+    room.style.height = Math.round(hPx * z) + "px";
     room.style.transform = `rotate(${room.dataset.rotation}deg)`;
 
     const dimW = (typeof wM === 'number' && !Number.isNaN(wM)) ? wM.toFixed(1) + ' m' : '';

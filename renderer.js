@@ -18,6 +18,10 @@ let alternatives = [];
 let currentProjectData = null;
 let activeAltIndex = 0;
 
+// --- Undo (מחסנית צעד אחורה) ---
+const UNDO_LIMIT = 50;
+let undoStack = [];
+
 // Initialize
 window.addEventListener('DOMContentLoaded', () => {
     initApp();
@@ -28,6 +32,10 @@ window.isAltPressed = false;
 window.onkeydown = (e) => {
     if (e.altKey) window.isAltPressed = true;
     if (e.key === 'Delete' || e.key === 'Backspace') deleteSelectedRooms();
+    if (e.ctrlKey && e.key === 'z') {
+        e.preventDefault();
+        undo();
+    }
 };
 window.onkeyup = (e) => {
     window.isAltPressed = false;
@@ -102,11 +110,12 @@ function getCurrentProjectData() {
     return {
         app: APP_NAME,
         version: APP_VERSION,
-        floors: state.floors,
+        floors: JSON.parse(JSON.stringify(state.floors)),
         rooms: getPlanState(),
         camera: { panX: camera.panX, panY: camera.panY, zoom: camera.zoom },
         selectedFloorId: state.activeFloorId,
-        counter: state.roomIdCounter
+        counter: state.roomIdCounter,
+        nestedData: JSON.parse(JSON.stringify(state.nestedData))
     };
 }
 
@@ -151,6 +160,7 @@ async function loadProject() {
         applyProjectData(current);
         currentProjectData = JSON.parse(JSON.stringify(current));
         alternatives = data.alternatives;
+        undoStack = [];
     } else {
         if (!data.floors || !Array.isArray(data.floors) || data.floors.length === 0) {
             alert("פורמט פרויקט לא נתמך או קובץ פגום (חסרות קומות).");
@@ -165,6 +175,7 @@ async function loadProject() {
         alternatives = [];
     }
     activeAltIndex = 0;
+    undoStack = [];
     renderAltTabs();
 }
 
@@ -184,6 +195,10 @@ function applyProjectData(data) {
         const plan = buildFloorPlan(f);
         wrapper.appendChild(plan);
     });
+
+    if (data.nestedData && typeof data.nestedData === 'object') {
+        state.nestedData = JSON.parse(JSON.stringify(data.nestedData));
+    }
 
     if (data.camera) {
         camera.panX = data.camera.panX;
@@ -206,6 +221,22 @@ function applyProjectData(data) {
     updateHeightInputs();
     updateFloorSelect();
     switchFloor(data.selectedFloorId || state.floors[0].id);
+}
+
+function pushUndo() {
+    try {
+        const snapshot = getCurrentProjectData();
+        undoStack.push(snapshot);
+        if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+    } catch (err) {
+        console.warn('Undo snapshot failed', err);
+    }
+}
+
+function undo() {
+    if (undoStack.length === 0) return;
+    const snapshot = undoStack.pop();
+    applyProjectData(snapshot);
 }
 
 function createAlternative() {
@@ -304,25 +335,26 @@ function refreshRoomsForZoom(oldZoom, newZoom) {
         const logicalTop = (parseFloat(room.style.top) / oldZoom) - WORKSPACE_OFFSET;
         const logicalW = parseFloat(room.style.width) / oldZoom;
         const logicalH = parseFloat(room.style.height) / oldZoom;
-        room.style.left = (WORKSPACE_OFFSET + logicalLeft) * newZoom + 'px';
-        room.style.top = (WORKSPACE_OFFSET + logicalTop) * newZoom + 'px';
-        room.style.width = logicalW * newZoom + 'px';
-        room.style.height = logicalH * newZoom + 'px';
+        room.style.left = Math.round((WORKSPACE_OFFSET + logicalLeft) * newZoom) + 'px';
+        room.style.top = Math.round((WORKSPACE_OFFSET + logicalTop) * newZoom) + 'px';
+        room.style.width = Math.round(logicalW * newZoom) + 'px';
+        room.style.height = Math.round(logicalH * newZoom) + 'px';
     });
     refreshUnderlays();
 }
 
-/** Returns room state in 2D logical coordinates (same origin as config) for 3D alignment. */
+/** Returns room state in 2D logical coordinates (same origin as config) for 3D alignment. Rounded so 2D and 3D match exactly. */
 function getPlanState() {
     const z = camera ? camera.zoom : 1;
+    const round2 = (v) => Math.round(v * 100) / 100;
     return Array.from(document.querySelectorAll('.room')).map(r => ({
         id: r.id,
         name: r.querySelector('.room-label').innerText,
         floorId: r.dataset.floor,
-        leftPx: (parseFloat(r.style.left) / z) - WORKSPACE_OFFSET,
-        topPx: (parseFloat(r.style.top) / z) - WORKSPACE_OFFSET,
-        widthPx: parseFloat(r.style.width) / z,
-        heightPx: parseFloat(r.style.height) / z,
+        leftPx: round2((parseFloat(r.style.left) / z) - WORKSPACE_OFFSET),
+        topPx: round2((parseFloat(r.style.top) / z) - WORKSPACE_OFFSET),
+        widthPx: round2(parseFloat(r.style.width) / z),
+        heightPx: round2(parseFloat(r.style.height) / z),
         rotationDeg: parseFloat(r.dataset.rotation || 0),
         color: r.style.backgroundColor,
         customHeight: r.dataset.customHeight ? parseFloat(r.dataset.customHeight) : undefined,
@@ -446,6 +478,7 @@ function close3D() {
 }
 
 function addNewFloor() {
+    pushUndo();
     const id = `floor-${state.floors.length}-${Math.random().toString(36).substr(2, 5)}`;
     const names = ["קרקע", "א'", "ב'", "ג'", "ד'"];
     const name = "קומה " + (names[state.floors.length] || state.floors.length);
@@ -468,7 +501,7 @@ function addNewFloor() {
 function deleteFloor(id) {
     if (state.floors.length <= 1) return alert("לא ניתן למחוק קומה אחרונה.");
     if (!confirm("למחוק קומה זו וכל תוכנה?")) return;
-
+    pushUndo();
     if (state.deleteFloor(id)) {
         document.getElementById('tab-' + id).remove();
         document.getElementById(id).remove();
@@ -614,6 +647,7 @@ function splitRoom(id) {
     if (totalArea <= 0.1) return;
 
     showSplitModal(room, totalArea, (splitArea) => {
+        pushUndo();
         const remainingArea = totalArea - splitArea;
         room.dataset.area = remainingArea.toFixed(1);
         const sideM = Math.sqrt(remainingArea);
@@ -894,6 +928,7 @@ function onRoomMerge(parentId, childId) {
     const parent = document.getElementById(parentId);
     const child = document.getElementById(childId);
     if (!parent || !child) return;
+    pushUndo();
 
     if (!confirm(`האם למזג את "${child.querySelector('.room-label').innerText}" לתוך "${parent.querySelector('.room-label').innerText}"?`)) {
         return;
@@ -938,7 +973,7 @@ function onRoomMerge(parentId, childId) {
 function unnestRoom(parentId, childId) {
     const parent = document.getElementById(parentId);
     if (!parent) return;
-
+    pushUndo();
     const nestedArr = state.nestedData[parentId];
     const childIdx = nestedArr.findIndex(c => c.id === childId);
     if (childIdx === -1) return;
@@ -992,18 +1027,23 @@ function addNewRoomUI() {
         return;
     }
     if (!f) return;
+    pushUndo();
     const { x, y } = camera.screenToLogical(window.innerWidth / 2, window.innerHeight / 2);
     createRoom({ name: n, area: a, floorId: f, leftPx: x, topPx: y, shape });
 }
 
 function deleteRoom(id) {
     const room = document.getElementById(id);
-    if (room) room.remove();
+    if (!room) return;
+    pushUndo();
+    room.remove();
     syncInventory();
     refreshUnderlays();
 }
 
 function deleteSelectedRooms() {
+    if (state.selectedRooms.length === 0) return;
+    pushUndo();
     state.selectedRooms.forEach(r => r.remove());
     state.selectedRooms = [];
     syncInventory();

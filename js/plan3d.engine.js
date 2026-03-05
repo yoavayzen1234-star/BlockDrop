@@ -198,9 +198,9 @@ export class Plan3DEngine {
                     // Rotate so y is up in Three.js
                     geometry.rotateX(Math.PI / 2);
                 } else if (r.shape === 'ellipse') {
-                    // Ellipse/circle room: shape in XY, extrude along Z, then rotate to XZ floor
-                    const rx = (r.widthPx || r.width) / (2 * this.SCALE);
-                    const ry = (r.heightPx || r.height) / (2 * this.SCALE);
+                    // Ellipse/circle room: shape in XY, extrude along Z, then rotate to XZ floor — round for 2D/3D match
+                    const rx = Math.round((r.widthPx || r.width) * 1e6) / 1e6 / (2 * this.SCALE);
+                    const ry = Math.round((r.heightPx || r.height) * 1e6) / 1e6 / (2 * this.SCALE);
                     const ellipseShape = new THREE.Shape();
                     ellipseShape.absellipse(0, 0, rx, ry, 0, 2 * Math.PI, false);
                     geometry = new THREE.ExtrudeGeometry(ellipseShape, {
@@ -209,9 +209,9 @@ export class Plan3DEngine {
                     });
                     geometry.rotateX(Math.PI / 2);
                 } else {
-                    // Box Fallback (rectangle)
-                    const w = (r.widthPx || r.width) / this.SCALE;
-                    const d = (r.heightPx || r.height) / this.SCALE;
+                    // Box Fallback (rectangle) — round so 2D/3D match exactly
+                    const w = Math.round((r.widthPx || r.width) * 1e6) / 1e6 / this.SCALE;
+                    const d = Math.round((r.heightPx || r.height) * 1e6) / 1e6 / this.SCALE;
                     geometry = new THREE.BoxGeometry(w, h, d);
                 }
 
@@ -230,7 +230,7 @@ export class Plan3DEngine {
                 mesh.userData.floorId = r.floorId;
 
                 if (r.outer) {
-                    // Place centered polygon back to its 2D position (center-based)
+                    // Place centered polygon back to its 2D position (center-based) — round for 2D/3D match
                     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
                     r.outer.forEach(p => {
                         minX = Math.min(minX, p.x);
@@ -238,17 +238,17 @@ export class Plan3DEngine {
                         maxX = Math.max(maxX, p.x);
                         maxY = Math.max(maxY, p.y);
                     });
-                    const centerPxX = (minX + maxX) / 2;
-                    const centerPxY = (minY + maxY) / 2;
+                    const centerPxX = Math.round((minX + maxX) / 2 * 1e6) / 1e6;
+                    const centerPxY = Math.round((minY + maxY) / 2 * 1e6) / 1e6;
                     mesh.position.set(centerPxX / this.SCALE, accumulatedHeight + (h / 2), centerPxY / this.SCALE);
                     mesh.rotation.y = -((r.rotationDeg ?? r.rotation ?? 0) * (Math.PI / 180));
                 } else {
                     // Rectangles: BoxGeometry is centered, bottom at local -h/2 → position.y = accumulatedHeight + h/2.
                     // Ellipse: ExtrudeGeometry after rotateX(PI/2) has bottom at local -h → position.y = accumulatedHeight + h so floor = accumulatedHeight.
-                    const leftPx = (r.leftPx ?? r.left ?? 0);
-                    const topPx = (r.topPx ?? r.top ?? 0);
-                    const widthPx = (r.widthPx ?? r.width ?? 0);
-                    const heightPx = (r.heightPx ?? r.height ?? 0);
+                    const leftPx = Math.round((r.leftPx ?? r.left ?? 0) * 1e6) / 1e6;
+                    const topPx = Math.round((r.topPx ?? r.top ?? 0) * 1e6) / 1e6;
+                    const widthPx = Math.round((r.widthPx ?? r.width ?? 0) * 1e6) / 1e6;
+                    const heightPx = Math.round((r.heightPx ?? r.height ?? 0) * 1e6) / 1e6;
 
                     const cx = (leftPx + (widthPx / 2)) / this.SCALE;
                     const cz = (topPx + (heightPx / 2)) / this.SCALE;

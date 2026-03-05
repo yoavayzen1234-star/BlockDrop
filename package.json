@@ -16,6 +16,7 @@
     "electron-builder": "24.6.3"
   },
   "dependencies": {
+    "polygon-clipping": "^0.15.7",
     "three": "^0.128.0"
   },
   "build": {
