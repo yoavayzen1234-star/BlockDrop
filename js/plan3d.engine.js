@@ -197,8 +197,19 @@ export class Plan3DEngine {
 
                     // Rotate so y is up in Three.js
                     geometry.rotateX(Math.PI / 2);
+                } else if (r.shape === 'ellipse') {
+                    // Ellipse/circle room: shape in XY, extrude along Z, then rotate to XZ floor
+                    const rx = (r.widthPx || r.width) / (2 * this.SCALE);
+                    const ry = (r.heightPx || r.height) / (2 * this.SCALE);
+                    const ellipseShape = new THREE.Shape();
+                    ellipseShape.absellipse(0, 0, rx, ry, 0, 2 * Math.PI, false);
+                    geometry = new THREE.ExtrudeGeometry(ellipseShape, {
+                        depth: h,
+                        bevelEnabled: false
+                    });
+                    geometry.rotateX(Math.PI / 2);
                 } else {
-                    // Box Fallback
+                    // Box Fallback (rectangle)
                     const w = (r.widthPx || r.width) / this.SCALE;
                     const d = (r.heightPx || r.height) / this.SCALE;
                     geometry = new THREE.BoxGeometry(w, h, d);
@@ -232,7 +243,8 @@ export class Plan3DEngine {
                     mesh.position.set(centerPxX / this.SCALE, accumulatedHeight + (h / 2), centerPxY / this.SCALE);
                     mesh.rotation.y = -((r.rotationDeg ?? r.rotation ?? 0) * (Math.PI / 180));
                 } else {
-                    // Rectangles: 2D left/top are top-left in px. Three.js meshes are centered.
+                    // Rectangles: BoxGeometry is centered, bottom at local -h/2 → position.y = accumulatedHeight + h/2.
+                    // Ellipse: ExtrudeGeometry after rotateX(PI/2) has bottom at local -h → position.y = accumulatedHeight + h so floor = accumulatedHeight.
                     const leftPx = (r.leftPx ?? r.left ?? 0);
                     const topPx = (r.topPx ?? r.top ?? 0);
                     const widthPx = (r.widthPx ?? r.width ?? 0);
@@ -240,7 +252,9 @@ export class Plan3DEngine {
 
                     const cx = (leftPx + (widthPx / 2)) / this.SCALE;
                     const cz = (topPx + (heightPx / 2)) / this.SCALE;
-                    mesh.position.set(cx, accumulatedHeight + (h / 2), cz);
+                    const isEllipse = r.shape === 'ellipse';
+                    const posY = isEllipse ? accumulatedHeight + h : accumulatedHeight + (h / 2);
+                    mesh.position.set(cx, posY, cz);
                     mesh.rotation.y = -((r.rotationDeg ?? r.rotation ?? 0) * (Math.PI / 180));
                 }
 

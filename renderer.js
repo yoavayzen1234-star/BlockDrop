@@ -537,7 +537,12 @@ function updateRoomSize(id, wM, hM, anchor = 'tl') {
     if (!isEllipse) {
         if (anchor === 'r' || anchor === 'l') hM = area / wM; else wM = area / hM;
     } else {
-        area = (Math.PI * wM * hM) / 4;
+        // עיגול: תמיד רוחב = גובה; השטח נגזר מהגודל שבמתיחה
+        if (wM == null || wM === undefined) wM = hM;
+        if (hM == null || hM === undefined) hM = wM;
+        const sizeM = (wM + hM) / 2;
+        wM = hM = sizeM;
+        area = (Math.PI * sizeM * sizeM) / 4;
         room.dataset.area = area.toFixed(1);
     }
     const z = camera ? camera.zoom : 1;
@@ -546,6 +551,7 @@ function updateRoomSize(id, wM, hM, anchor = 'tl') {
     room.querySelector('.dim-w').innerText = wM.toFixed(1) + ' m';
     room.querySelector('.dim-l').innerText = hM.toFixed(1) + ' m';
     room.querySelector('.room-info').innerText = area.toFixed(0) + ' m²';
+    syncInventory();
 }
 
 function closeSplitModal() {
@@ -775,8 +781,12 @@ function syncInventory() {
                 return;
             }
             r.dataset.area = String(next);
-            updateRoomSize(r.id, Math.sqrt(next), Math.sqrt(next));
-            syncInventory();
+            if (r.dataset.shape === 'ellipse') {
+                const sizeM = Math.sqrt((4 * next) / Math.PI);
+                updateRoomSize(r.id, sizeM, null);
+            } else {
+                updateRoomSize(r.id, Math.sqrt(next), Math.sqrt(next));
+            }
         };
 
         item.appendChild(left);
