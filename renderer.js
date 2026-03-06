@@ -1,4 +1,9 @@
-import { SCALE, WORKSPACE_OFFSET, roundLogical } from './js/config.js';
+/**
+ * WORKSPACE_OFFSET is applied once when converting logical coords → display (style.left/top).
+ * It is the single origin for all floors; do not add any redundant offset inside floor rendering.
+ * All rooms use global state logical (leftPx, topPx); display = (WORKSPACE_OFFSET + logical) * zoom.
+ */
+import { SCALE, WORKSPACE_OFFSET, roundLogical, areaM2ToCircleDiameterM, areaM2ToCircleDiameterPx, areaM2ToSquareSidePx } from './js/config.js';
 import { state } from './js/state.js';
 import { createRoomElement, buildFloorTab, buildFloorPlan } from './js/ui-builder.js';
 import { Plan3DEngine } from './js/plan3d.engine.js';
@@ -729,7 +734,7 @@ function splitRoom(id) {
         const sideM = Math.sqrt(remainingArea);
         updateRoomSize(id, sideM, sideM);
         const z = camera ? camera.zoom : 1;
-        const sidePx = SCALE * Math.sqrt(splitArea);
+        const sidePx = areaM2ToSquareSidePx(splitArea);
         const baseLeft = Number.isFinite(parseFloat(room.dataset.logicalLeftPx)) ? parseFloat(room.dataset.logicalLeftPx) : (parseFloat(room.style.left) / z) - WORKSPACE_OFFSET;
         const baseTop = Number.isFinite(parseFloat(room.dataset.logicalTopPx)) ? parseFloat(room.dataset.logicalTopPx) : (parseFloat(room.style.top) / z) - WORKSPACE_OFFSET;
         createRoom({
@@ -893,8 +898,7 @@ function syncInventory() {
             }
             r.dataset.area = String(next);
             if (r.dataset.shape === 'ellipse') {
-                const sizeM = Math.sqrt((4 * next) / Math.PI);
-                updateRoomSize(r.id, sizeM, null);
+                updateRoomSize(r.id, areaM2ToCircleDiameterM(next), null);
             } else {
                 updateRoomSize(r.id, Math.sqrt(next), Math.sqrt(next));
             }

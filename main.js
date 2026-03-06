@@ -89,10 +89,3 @@ ipcMain.handle('load-file', async () => {
         return { success: false, error: err.message };
     }
 });
-
-// Hardware ID (Basic Fingerprint)
-ipcMain.handle('get-hwid', () => {
-    // In a real app, use a lib like 'node-machine-id'
-    // For now, return a platform-based unique-ish string
-    return `${process.platform}-${process.arch}-${require('os').hostname()}`;
-});

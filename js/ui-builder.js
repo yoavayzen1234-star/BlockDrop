@@ -1,7 +1,12 @@
-import { SCALE, WORKSPACE_OFFSET, roundLogical, escapeHtml } from './config.js';
+import { SCALE, WORKSPACE_OFFSET, roundLogical, escapeHtml, areaM2ToCircleDiameterPx, areaM2ToSquareSidePx } from './config.js';
 import { state } from './state.js';
 import { makeDraggable, setupResizing, startRotate } from './editor2d.js';
 
+/**
+ * All floors share the same (0,0) relative to #canvas-wrapper. Room position is global state
+ * logical (lx, ly); WORKSPACE_OFFSET is applied once here when setting style.left/top. No local
+ * offsets in buildFloorPlan or createRoomElement.
+ */
 export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }) {
     const room = document.createElement('div');
     room.className = 'room';
@@ -14,13 +19,10 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
     let hPx = parseFloat(r.heightPx || r.height);
     if (!Number.isFinite(wPx) || !Number.isFinite(hPx) || wPx <= 0 || hPx <= 0) {
         const areaM2 = r.area != null && Number.isFinite(parseFloat(r.area)) ? parseFloat(r.area) : 25;
-        const areaPx = areaM2 * SCALE * SCALE;
         if (isEllipse) {
-            const diameterPx = 2 * Math.sqrt(areaPx / Math.PI);
-            wPx = hPx = roundLogical(diameterPx);
+            wPx = hPx = roundLogical(areaM2ToCircleDiameterPx(areaM2));
         } else {
-            const sidePx = Math.sqrt(areaPx);
-            wPx = hPx = roundLogical(sidePx);
+            wPx = hPx = roundLogical(areaM2ToSquareSidePx(areaM2));
         }
     }
     const wM = wPx / SCALE;
@@ -45,6 +47,7 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
     }
 
     const z = camera ? camera.zoom : 1;
+    /* Single origin: logical (0,0) → display (WORKSPACE_OFFSET*z). No per-floor offset. */
     room.style.left = Math.round((lx + WORKSPACE_OFFSET) * z) + "px";
     room.style.top = Math.round((ly + WORKSPACE_OFFSET) * z) + "px";
     room.style.width = Math.round(wPx * z) + "px";
@@ -130,6 +133,7 @@ export function buildFloorTab(f, { onDeleteFloor, onSwitchFloor }) {
     return tab;
 }
 
+/** Build a floor container. No local top/left or transform—all floors use same CSS .floor-plan origin. */
 export function buildFloorPlan(f) {
     const plan = document.createElement('div');
     plan.className = 'floor-plan';

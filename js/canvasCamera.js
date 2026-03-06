@@ -1,6 +1,8 @@
 /**
  * CanvasCamera - Infinite Canvas Pan & Zoom
  * All interactions use screenToLogical / logicalToScreen so coordinates are 1:1 with canvasZoom.
+ * Logical (0,0) = center of the infinite canvas. All floor containers share this same origin
+ * (no per-floor top/left offset); --zoom is on the wrapper so screenToLogical is consistent for every floor.
  */
 export class CanvasCamera {
     constructor(wrapperEl, mainEl) {
@@ -142,7 +144,8 @@ export class CanvasCamera {
     }
 
     /**
-     * Convert screen coordinates to logical canvas coordinates
+     * Convert screen coordinates to logical canvas coordinates.
+     * Origin (0,0) = center of canvas; same for all floors (wrapper has no per-floor offset).
      */
     screenToLogical(x, y) {
         const rect = this._getMainRect();

@@ -1,8 +1,22 @@
 /**
  * Plan3DEngine - Upgraded with Polygon (Shape) support.
  * Uses same SCALE as 2D (config) so 3D is in perfect alignment with the plan.
+ *
+ * Global origin: Logical (0,0) in 2D maps exactly to Three.js (0, 0, 0) in the XZ plane.
+ * Floor stacking: Floor N's base Y = sum of previous floor heights (no gap or padding).
+ * Circular rooms: Cylinder/ellipse geometry is centered at (0,0) locally; mesh position
+ * is the room center (position.x, position.z) so placement is by center, not corner.
+ *
+ * Coordinate mapping (1:1 with 2D logical):
+ *   - logicalX → position.x (meters) = logicalX / SCALE
+ *   - logicalY → position.z (meters) = logicalY / SCALE
  */
 import { SCALE } from './config.js';
+
+const LOGICAL_PRECISION = 1e6;
+function roundLogical(v) {
+    return Number.isFinite(v) ? Math.round(Number(v) * LOGICAL_PRECISION) / LOGICAL_PRECISION : v;
+}
 
 export class Plan3DEngine {
     constructor() {
@@ -15,7 +29,7 @@ export class Plan3DEngine {
         this.meshes = [];
         /** Pickable room meshes only (exclude edge lines/grid). */
         this.roomPickables = [];
-        /** Pixels per meter - must match 2D config.SCALE for alignment */
+        /** Pixels per meter - must match 2D config.SCALE for alignment (single source: config.js). */
         this.SCALE = SCALE;
         this._onResize = null;
         this._onDblClick = null;
@@ -198,9 +212,11 @@ export class Plan3DEngine {
                     // Rotate so y is up in Three.js
                     geometry.rotateX(Math.PI / 2);
                 } else if (r.shape === 'ellipse') {
-                    // Ellipse/circle room: shape in XY, extrude along Z, then rotate to XZ floor — round for 2D/3D match
-                    const rx = Math.round((r.widthPx || r.width) * 1e6) / 1e6 / (2 * this.SCALE);
-                    const ry = Math.round((r.heightPx || r.height) * 1e6) / 1e6 / (2 * this.SCALE);
+                    // Circle: radius = sqrt(area/π)*SCALE in px → radius in m = radiusPx/SCALE. Same SCALE for all floors.
+                    const radiusPxX = roundLogical((r.widthPx || r.width) / 2);
+                    const radiusPxY = roundLogical((r.heightPx || r.height) / 2);
+                    const rx = radiusPxX / this.SCALE;
+                    const ry = radiusPxY / this.SCALE;
                     const ellipseShape = new THREE.Shape();
                     ellipseShape.absellipse(0, 0, rx, ry, 0, 2 * Math.PI, false);
                     geometry = new THREE.ExtrudeGeometry(ellipseShape, {
@@ -209,9 +225,9 @@ export class Plan3DEngine {
                     });
                     geometry.rotateX(Math.PI / 2);
                 } else {
-                    // Box Fallback (rectangle) — round so 2D/3D match exactly
-                    const w = Math.round((r.widthPx || r.width) * 1e6) / 1e6 / this.SCALE;
-                    const d = Math.round((r.heightPx || r.height) * 1e6) / 1e6 / this.SCALE;
+                    // Box Fallback (rectangle) — size in meters = logical px / SCALE
+                    const w = roundLogical(r.widthPx ?? r.width ?? 0) / this.SCALE;
+                    const d = roundLogical(r.heightPx ?? r.height ?? 0) / this.SCALE;
                     geometry = new THREE.BoxGeometry(w, h, d);
                 }
 
@@ -243,18 +259,20 @@ export class Plan3DEngine {
                     mesh.position.set(centerPxX / this.SCALE, accumulatedHeight + (h / 2), centerPxY / this.SCALE);
                     mesh.rotation.y = -((r.rotationDeg ?? r.rotation ?? 0) * (Math.PI / 180));
                 } else {
-                    // Rectangles: BoxGeometry is centered, bottom at local -h/2 → position.y = accumulatedHeight + h/2.
-                    // Ellipse: ExtrudeGeometry after rotateX(PI/2) has bottom at local -h → position.y = accumulatedHeight + h so floor = accumulatedHeight.
-                    const leftPx = Math.round((r.leftPx ?? r.left ?? 0) * 1e6) / 1e6;
-                    const topPx = Math.round((r.topPx ?? r.top ?? 0) * 1e6) / 1e6;
-                    const widthPx = Math.round((r.widthPx ?? r.width ?? 0) * 1e6) / 1e6;
-                    const heightPx = Math.round((r.heightPx ?? r.height ?? 0) * 1e6) / 1e6;
+                    // 1:1 mapping: logical (0,0) → Three.js (0,0,0). Room center (x,z) from center of bounding box.
+                    const leftPx = roundLogical(r.leftPx ?? r.left ?? 0);
+                    const topPx = roundLogical(r.topPx ?? r.top ?? 0);
+                    const widthPx = roundLogical(r.widthPx ?? r.width ?? 0);
+                    const heightPx = roundLogical(r.heightPx ?? r.height ?? 0);
+                    const centerLogicalX = leftPx + widthPx / 2;
+                    const centerLogicalY = topPx + heightPx / 2;
+                    const positionX = centerLogicalX / this.SCALE;
+                    const positionZ = centerLogicalY / this.SCALE;
 
-                    const cx = (leftPx + (widthPx / 2)) / this.SCALE;
-                    const cz = (topPx + (heightPx / 2)) / this.SCALE;
                     const isEllipse = r.shape === 'ellipse';
+                    // Floor stack: no gap. Floor N base Y = accumulatedHeight; box center at h/2, extrusion bottom at 0.
                     const posY = isEllipse ? accumulatedHeight + h : accumulatedHeight + (h / 2);
-                    mesh.position.set(cx, posY, cz);
+                    mesh.position.set(positionX, posY, positionZ);
                     mesh.rotation.y = -((r.rotationDeg ?? r.rotation ?? 0) * (Math.PI / 180));
                 }
 

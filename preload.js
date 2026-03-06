@@ -16,15 +16,5 @@ contextBridge.exposeInMainWorld('api', {
      * Load project data from a local file
      * @returns {Promise<{success: boolean, content?: string}>}
      */
-    loadFile: () => ipcRenderer.invoke('load-file'),
-
-    /**
-     * Get basic hardware fingerprint
-     */
-    getHWID: () => ipcRenderer.invoke('get-hwid'),
-
-    /**
-     * Listen for messages from main process if needed
-     */
-    onMessage: (callback) => ipcRenderer.on('main-message', (event, ...args) => callback(...args))
+    loadFile: () => ipcRenderer.invoke('load-file')
 });

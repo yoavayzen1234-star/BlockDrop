@@ -209,6 +209,7 @@
             will-change: transform;
         }
 
+        /* All floors share the same zero point: center at (0,0). No per-floor top/left or transform:scale()—keeps SCALE in sync. */
         .floor-plan {
             position: absolute;
             width: calc(50000px * var(--zoom, 1));
