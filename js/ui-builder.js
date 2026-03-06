@@ -15,13 +15,14 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
     const lx = r.leftPx ?? parseFloat(r.left) ?? 0;
     const ly = r.topPx ?? parseFloat(r.top) ?? 0;
     const isEllipse = r.shape === 'ellipse';
-    let wPx = parseFloat(r.widthPx || r.width);
-    let hPx = parseFloat(r.heightPx || r.height);
-    if (!Number.isFinite(wPx) || !Number.isFinite(hPx) || wPx <= 0 || hPx <= 0) {
-        const areaM2 = r.area != null && Number.isFinite(parseFloat(r.area)) ? parseFloat(r.area) : 25;
-        if (isEllipse) {
-            wPx = hPx = roundLogical(areaM2ToCircleDiameterPx(areaM2));
-        } else {
+    const areaM2 = r.area != null && Number.isFinite(parseFloat(r.area)) ? parseFloat(r.area) : 25;
+    let wPx, hPx;
+    if (isEllipse) {
+        wPx = hPx = roundLogical(areaM2ToCircleDiameterPx(areaM2));
+    } else {
+        wPx = parseFloat(r.widthPx || r.width);
+        hPx = parseFloat(r.heightPx || r.height);
+        if (!Number.isFinite(wPx) || !Number.isFinite(hPx) || wPx <= 0 || hPx <= 0) {
             wPx = hPx = roundLogical(areaM2ToSquareSidePx(areaM2));
         }
     }
@@ -35,7 +36,6 @@ export function createRoomElement(r, camera, { onDelete, onSplit, onUpdateSize }
     room.dataset.floor = r.floorId || r.floor;
     room.dataset.rotation = (r.rotationDeg ?? r.rotation ?? 0).toString();
     room.dataset.shape = isEllipse ? 'ellipse' : 'rect';
-    // Single source of truth for logical size/position so all floors and 3D stay consistent (same precision as plan3d)
     room.dataset.logicalLeftPx = String(roundLogical(lx));
     room.dataset.logicalTopPx = String(roundLogical(ly));
     room.dataset.logicalWidthPx = String(roundLogical(wPx));

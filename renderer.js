@@ -383,11 +383,15 @@ function refreshRoomsForZoom(oldZoom, newZoom) {
             room.dataset.logicalTopPx = String(logicalTop);
         }
         if (!Number.isFinite(logicalW)) {
-            logicalW = roundLogical(parseFloat(room.style.width) / oldZoom);
+            logicalW = room.dataset.shape === 'ellipse' && Number.isFinite(parseFloat(room.dataset.area))
+                ? roundLogical(areaM2ToCircleDiameterPx(parseFloat(room.dataset.area)))
+                : roundLogical(parseFloat(room.style.width) / oldZoom);
             room.dataset.logicalWidthPx = String(logicalW);
         }
         if (!Number.isFinite(logicalH)) {
-            logicalH = roundLogical(parseFloat(room.style.height) / oldZoom);
+            logicalH = room.dataset.shape === 'ellipse' && Number.isFinite(parseFloat(room.dataset.area))
+                ? roundLogical(areaM2ToCircleDiameterPx(parseFloat(room.dataset.area)))
+                : roundLogical(parseFloat(room.style.height) / oldZoom);
             room.dataset.logicalHeightPx = String(logicalH);
         }
         const wPx = Math.round(logicalW * newZoom);
@@ -410,12 +414,17 @@ function getPlanState() {
         const topPx = Number.isFinite(parseFloat(r.dataset.logicalTopPx))
             ? parseFloat(r.dataset.logicalTopPx)
             : (parseFloat(r.style.top) / z) - WORKSPACE_OFFSET;
-        const widthPx = Number.isFinite(parseFloat(r.dataset.logicalWidthPx))
+        const isEllipse = r.dataset.shape === 'ellipse';
+        const area = parseFloat(r.dataset.area);
+        let widthPx = Number.isFinite(parseFloat(r.dataset.logicalWidthPx))
             ? parseFloat(r.dataset.logicalWidthPx)
             : parseFloat(r.style.width) / z;
-        const heightPx = Number.isFinite(parseFloat(r.dataset.logicalHeightPx))
+        let heightPx = Number.isFinite(parseFloat(r.dataset.logicalHeightPx))
             ? parseFloat(r.dataset.logicalHeightPx)
             : parseFloat(r.style.height) / z;
+        if (isEllipse && Number.isFinite(area) && area > 0) {
+            widthPx = heightPx = roundLogical(areaM2ToCircleDiameterPx(area));
+        }
         return {
             id: r.id,
             name: r.querySelector('.room-label').innerText,
@@ -656,8 +665,13 @@ function updateRoomSize(id, wM, hM, anchor = 'tl') {
         room.dataset.area = area.toFixed(1);
     }
     const z = camera ? camera.zoom : 1;
-    const logicalW = roundLogical(wM * SCALE);
-    const logicalH = roundLogical(hM * SCALE);
+    // עיגול: קוטר לוגי תמיד מהשטח (פונקציה קנונית אחת) — יישור מושלם בין קומות
+    const logicalW = isEllipse
+        ? roundLogical(areaM2ToCircleDiameterPx(area))
+        : roundLogical(wM * SCALE);
+    const logicalH = isEllipse
+        ? roundLogical(areaM2ToCircleDiameterPx(area))
+        : roundLogical(hM * SCALE);
     room.dataset.logicalWidthPx = String(logicalW);
     room.dataset.logicalHeightPx = String(logicalH);
     room.style.width = (logicalW * z) + 'px';

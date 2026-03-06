@@ -1,5 +1,5 @@
 /**
- * Plan3DEngine - Upgraded with Polygon (Shape) support.
+ * Plan3DEngine - Rect and ellipse room extrusion.
  * Uses same SCALE as 2D (config) so 3D is in perfect alignment with the plan.
  *
  * Global origin: Logical (0,0) in 2D maps exactly to Three.js (0, 0, 0) in the XZ plane.
@@ -171,47 +171,7 @@ export class Plan3DEngine {
                 let geometry;
                 const h = r.customHeight || floor.height;
 
-                if (r.outer && r.outer.length >= 3) {
-                    // Polygon Extrusion (points are expected in the same 2D px space as leftPx/topPx)
-                    // We center the geometry around its bounds center so positioning matches 2D precisely.
-                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                    r.outer.forEach(p => {
-                        minX = Math.min(minX, p.x);
-                        minY = Math.min(minY, p.y);
-                        maxX = Math.max(maxX, p.x);
-                        maxY = Math.max(maxY, p.y);
-                    });
-                    const centerPxX = (minX + maxX) / 2;
-                    const centerPxY = (minY + maxY) / 2;
-
-                    const shape = new THREE.Shape();
-                    shape.moveTo((r.outer[0].x - centerPxX) / this.SCALE, (r.outer[0].y - centerPxY) / this.SCALE);
-                    for (let i = 1; i < r.outer.length; i++) {
-                        shape.lineTo((r.outer[i].x - centerPxX) / this.SCALE, (r.outer[i].y - centerPxY) / this.SCALE);
-                    }
-                    shape.closePath();
-
-                    if (r.holes) {
-                        r.holes.forEach(hole => {
-                            if (hole.length < 3) return;
-                            const holePath = new THREE.Path();
-                            holePath.moveTo((hole[0].x - centerPxX) / this.SCALE, (hole[0].y - centerPxY) / this.SCALE);
-                            for (let i = 1; i < hole.length; i++) {
-                                holePath.lineTo((hole[i].x - centerPxX) / this.SCALE, (hole[i].y - centerPxY) / this.SCALE);
-                            }
-                            holePath.closePath();
-                            shape.holes.push(holePath);
-                        });
-                    }
-
-                    geometry = new THREE.ExtrudeGeometry(shape, {
-                        depth: h,
-                        bevelEnabled: false
-                    });
-
-                    // Rotate so y is up in Three.js
-                    geometry.rotateX(Math.PI / 2);
-                } else if (r.shape === 'ellipse') {
+                if (r.shape === 'ellipse') {
                     // Circle: radius = sqrt(area/π)*SCALE in px → radius in m = radiusPx/SCALE. Same SCALE for all floors.
                     const radiusPxX = roundLogical((r.widthPx || r.width) / 2);
                     const radiusPxY = roundLogical((r.heightPx || r.height) / 2);
@@ -245,36 +205,18 @@ export class Plan3DEngine {
                 mesh.userData.roomId = r.id;
                 mesh.userData.floorId = r.floorId;
 
-                if (r.outer) {
-                    // Place centered polygon back to its 2D position (center-based) — round for 2D/3D match
-                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-                    r.outer.forEach(p => {
-                        minX = Math.min(minX, p.x);
-                        minY = Math.min(minY, p.y);
-                        maxX = Math.max(maxX, p.x);
-                        maxY = Math.max(maxY, p.y);
-                    });
-                    const centerPxX = Math.round((minX + maxX) / 2 * 1e6) / 1e6;
-                    const centerPxY = Math.round((minY + maxY) / 2 * 1e6) / 1e6;
-                    mesh.position.set(centerPxX / this.SCALE, accumulatedHeight + (h / 2), centerPxY / this.SCALE);
-                    mesh.rotation.y = -((r.rotationDeg ?? r.rotation ?? 0) * (Math.PI / 180));
-                } else {
-                    // 1:1 mapping: logical (0,0) → Three.js (0,0,0). Room center (x,z) from center of bounding box.
-                    const leftPx = roundLogical(r.leftPx ?? r.left ?? 0);
-                    const topPx = roundLogical(r.topPx ?? r.top ?? 0);
-                    const widthPx = roundLogical(r.widthPx ?? r.width ?? 0);
-                    const heightPx = roundLogical(r.heightPx ?? r.height ?? 0);
-                    const centerLogicalX = leftPx + widthPx / 2;
-                    const centerLogicalY = topPx + heightPx / 2;
-                    const positionX = centerLogicalX / this.SCALE;
-                    const positionZ = centerLogicalY / this.SCALE;
-
-                    const isEllipse = r.shape === 'ellipse';
-                    // Floor stack: no gap. Floor N base Y = accumulatedHeight; box center at h/2, extrusion bottom at 0.
-                    const posY = isEllipse ? accumulatedHeight + h : accumulatedHeight + (h / 2);
-                    mesh.position.set(positionX, posY, positionZ);
-                    mesh.rotation.y = -((r.rotationDeg ?? r.rotation ?? 0) * (Math.PI / 180));
-                }
+                const leftPx = roundLogical(r.leftPx ?? r.left ?? 0);
+                const topPx = roundLogical(r.topPx ?? r.top ?? 0);
+                const widthPx = roundLogical(r.widthPx ?? r.width ?? 0);
+                const heightPx = roundLogical(r.heightPx ?? r.height ?? 0);
+                const centerLogicalX = leftPx + widthPx / 2;
+                const centerLogicalY = topPx + heightPx / 2;
+                const positionX = centerLogicalX / this.SCALE;
+                const positionZ = centerLogicalY / this.SCALE;
+                const isEllipse = r.shape === 'ellipse';
+                const posY = isEllipse ? accumulatedHeight + h : accumulatedHeight + (h / 2);
+                mesh.position.set(positionX, posY, positionZ);
+                mesh.rotation.y = -((r.rotationDeg ?? r.rotation ?? 0) * (Math.PI / 180));
 
                 mesh.castShadow = true;
                 mesh.receiveShadow = true;

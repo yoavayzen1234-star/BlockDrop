@@ -1,4 +1,4 @@
-import { SNAP_THRESHOLD, SCALE } from './config.js';
+import { SNAP_THRESHOLD, SCALE, roundLogical } from './config.js';
 
 /**
  * SnapEngine - Advanced Snapping Logic
@@ -32,8 +32,6 @@ export class SnapEngine {
         const threshold = SNAP_THRESHOLD / zoom;
         const addV = (x) => { if (guideV.indexOf(x) === -1) guideV.push(x); };
         const addH = (y) => { if (guideH.indexOf(y) === -1) guideH.push(y); };
-        /** Round logical coords so (WORKSPACE_OFFSET + val) * zoom gives stable pixels */
-        const roundLogical = (v) => Math.round(v * 1e4) / 1e4;
 
         // Bypass snapping when Alt is held
         if (!window.isAltPressed) {
